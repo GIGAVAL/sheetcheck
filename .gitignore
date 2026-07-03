@@ -3,6 +3,9 @@
 bidset.pdf
 *.pdf
 
+# Extraction cache (regenerated from the PDF on demand)
+*.sheetcache.json
+
 # Python
 __pycache__/
 *.pyc

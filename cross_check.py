@@ -4,17 +4,14 @@ cross_check.py — SheetCheck QA/QC check
 Cross-checks the drawing set against its own Sheet Index (the master list
 of sheets printed on page 2). Three things can go wrong in a real set:
 
-  * MISSING  — the index lists a sheet, but no page in the PDF has it
-               (a sheet was dropped when the set was assembled).
-  * EXTRA    — a page exists whose sheet number isn't in the index
-               (a sheet was added but the index wasn't updated).
-  * MISMATCH — the sheet exists in both, but its title on the drawing
-               doesn't match the title in the index (a title was edited
-               in one place but not the other).
+  * MISSING  — the index lists a sheet, but no page in the PDF has it.
+  * EXTRA    — a page exists whose sheet number isn't in the index.
+  * MISMATCH — the sheet exists in both, but its title differs.
 
-It reuses the title-block extractor from sheet_index.py so both the
-"what's actually in the set" and "what the index claims" come from the
-same PDF, parsed the same way.
+The cover sheet is a special case: its title block is drawn as graphics,
+so no sheet number can be read from it. When exactly one page is
+unreadable and exactly one indexed "cover" sheet is unmatched, we infer
+the match rather than reporting a false "missing".
 
 Usage:
     python cross_check.py bidset.pdf
@@ -25,40 +22,47 @@ import sys
 
 import pdfplumber
 
-from sheet_index import build_index, extract_title_block  # noqa: F401
+from extract import extract_sheets
 
 
 # The sheet index on page 2 is a two-column list. Sheet numbers sit in two
 # narrow x-bands; each title runs to the right of its number for a fixed
 # column width. These bands come from measuring page 2 (see project notes).
-INDEX_PAGE = 2                      # 1-based page number of the sheet index
+INDEX_PAGE = 2
 NUM_RE = re.compile(r"^[A-Z]{1,3}[0-9][0-9A-Z.]*$")
-COL_BANDS = ((1000, 1050), (1590, 1650))   # x0 ranges of the two number columns
-TITLE_COL_WIDTH = 545               # how far right of the number the title runs
-INDEX_TEXT_MAX_SIZE = 12            # index text is ~9.6 pt; ignore larger text
+COL_BANDS = ((1000, 1050), (1590, 1650))
+TITLE_COL_WIDTH = 545
+INDEX_TEXT_MAX_SIZE = 12
 
 
 def parse_sheet_index(page):
-    """Return {sheet_number: title} parsed from the sheet-index page."""
+    """Return the sheet index as an ordered list of (number, title).
+
+    Order is the index's own reading order: down column 1, then down
+    column 2. Callers that want lookup can do ``dict(parse_sheet_index(...))``.
+    """
     words = [w for w in page.extract_words(extra_attrs=["size"])
              if w["size"] < INDEX_TEXT_MAX_SIZE]
 
-    def in_a_column(x0):
-        return any(lo < x0 < hi for lo, hi in COL_BANDS)
+    def band(x0):
+        for i, (lo, hi) in enumerate(COL_BANDS):
+            if lo < x0 < hi:
+                return i
+        return None
 
     numbers = [w for w in words
                if NUM_RE.match(w["text"]) and "." in w["text"]
-               and in_a_column(w["x0"])]
+               and band(w["x0"]) is not None]
+    numbers.sort(key=lambda w: (band(w["x0"]), w["top"]))   # reading order
 
-    index = {}
+    entries = []
     for n in numbers:
         right_edge = n["x0"] + TITLE_COL_WIDTH
-        same_line = [w for w in words
-                     if abs(w["top"] - n["top"]) < 5          # same row
-                     and n["x1"] < w["x0"] < right_edge]      # to the right, in column
+        same_line = [w for w in words if abs(w["top"] - n["top"]) < 5
+                     and n["x1"] < w["x0"] < right_edge]
         title = " ".join(w["text"] for w in sorted(same_line, key=lambda w: w["x0"]))
-        index[n["text"]] = title.strip()
-    return index
+        entries.append((n["text"], title.strip()))
+    return entries
 
 
 def normalize(title):
@@ -74,9 +78,8 @@ def cross_check(block_rows, index):
 
     Returns (missing, extra, mismatches, duplicates).
     """
-    # Map each sheet number found in the set to the page(s) it appears on.
-    block = {}          # number -> (page, title)
-    duplicates = {}     # number -> [pages]  (same sheet number on >1 page)
+    block = {}
+    duplicates = {}
     for page_no, number, title in block_rows:
         if not number:
             continue
@@ -85,38 +88,57 @@ def cross_check(block_rows, index):
         else:
             block[number] = (page_no, title)
 
-    block_nums = set(block)
-    index_nums = set(index)
-
+    block_nums, index_nums = set(block), set(index)
     missing = sorted(index_nums - block_nums)
     extra = sorted(block_nums - index_nums)
 
     mismatches = []
     for number in sorted(block_nums & index_nums):
         page_no, block_title = block[number]
-        index_title = index[number]
-        if normalize(block_title) != normalize(index_title):
-            mismatches.append((number, page_no, index_title, block_title))
+        if normalize(block_title) != normalize(index[number]):
+            mismatches.append((number, page_no, index[number], block_title))
 
     return missing, extra, mismatches, duplicates
 
 
-def print_report(index, block_rows, missing, extra, mismatches, duplicates):
-    found = sum(1 for _, num, _ in block_rows if num)
+def reconcile_cover(block_rows, index, missing):
+    """Infer the cover match for the one unreadable page, if unambiguous.
+
+    Returns (updated_block_rows, inferred, remaining_missing) where
+    ``inferred`` is a list of (page, number, title).
+    """
     unreadable = [pg for pg, num, _ in block_rows if not num]
+    cover_missing = [m for m in missing if "COVER" in index[m].upper()]
+
+    if len(unreadable) == 1 and len(cover_missing) == 1:
+        page = unreadable[0]
+        number = cover_missing[0]
+        title = index[number]
+        block_rows = [
+            (pg, number, title) if pg == page else (pg, num, t)
+            for pg, num, t in block_rows
+        ]
+        return block_rows, [(page, number, title)], [m for m in missing if m != number]
+
+    return block_rows, [], missing
+
+
+def print_report(index, block_rows, missing, extra, mismatches, duplicates, inferred):
+    found = sum(1 for _, num, _ in block_rows if num)
+    still_unreadable = [pg for pg, num, _ in block_rows if not num]
+
     print("=" * 70)
     print("SHEET INDEX CROSS-CHECK")
     print("=" * 70)
     print(f"Index (page {INDEX_PAGE}) lists {len(index)} sheets.")
-    print(f"Title blocks found {found} sheets across {len(block_rows)} pages.")
-    if unreadable:
-        # A page with no readable sheet number can't be matched, so it will
-        # look like a "missing" index entry below. Surface it here so the two
-        # are easy to connect (the cover sheet is the usual culprit — its
-        # title block is drawn as graphics, not selectable text).
-        print(f"NOTE: no sheet number could be read on page(s) {unreadable} "
-              f"— likely the cover. Any 'MISSING' entry below may just be one of these.")
+    print(f"Title blocks matched {found} sheets across {len(block_rows)} pages.")
     print()
+
+    if inferred:
+        print(f"[i] INFERRED — page had no readable sheet number, matched by position ({len(inferred)}):")
+        for page, number, title in inferred:
+            print(f"      page {page} -> {number:<8} {title!r}  (cover sheet, inferred)")
+        print()
 
     print(f"[A] MISSING — in the index but not found in the set ({len(missing)}):")
     if missing:
@@ -152,22 +174,27 @@ def print_report(index, block_rows, missing, extra, mismatches, duplicates):
             print(f"      {number}: pages {pages}")
         print()
 
-    clean = not (missing or extra or mismatches or duplicates)
+    if still_unreadable:
+        print(f"[!] UNREADABLE — no sheet number could be read on page(s) {still_unreadable}.")
+        print()
+
+    clean = not (missing or extra or mismatches or duplicates or still_unreadable)
     print("RESULT:", "PASS — set matches its index." if clean
           else "DISCREPANCIES FOUND (see above).")
 
 
-def main():
-    pdf_path = sys.argv[1] if len(sys.argv) > 1 else "bidset.pdf"
+def run(pdf_path):
+    block_rows = [(s["page"], s["number"], s["title"]) for s in extract_sheets(pdf_path)]
     with pdfplumber.open(pdf_path) as pdf:
-        index = parse_sheet_index(pdf.pages[INDEX_PAGE - 1])
-        block_rows = [
-            (i, *extract_title_block(page))
-            for i, page in enumerate(pdf.pages, start=1)
-        ]
+        index = dict(parse_sheet_index(pdf.pages[INDEX_PAGE - 1]))
 
     missing, extra, mismatches, duplicates = cross_check(block_rows, index)
-    print_report(index, block_rows, missing, extra, mismatches, duplicates)
+    block_rows, inferred, missing = reconcile_cover(block_rows, index, missing)
+    print_report(index, block_rows, missing, extra, mismatches, duplicates, inferred)
+
+
+def main():
+    run(sys.argv[1] if len(sys.argv) > 1 else "bidset.pdf")
 
 
 if __name__ == "__main__":
