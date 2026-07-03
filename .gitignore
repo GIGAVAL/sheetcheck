@@ -6,6 +6,9 @@ bidset.pdf
 # Extraction cache (regenerated from the PDF on demand)
 *.sheetcache.json
 
+# macOS
+.DS_Store
+
 # Python
 __pycache__/
 *.pyc
