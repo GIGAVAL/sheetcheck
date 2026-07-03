@@ -17,6 +17,7 @@ Public API:
 
 import json
 import os
+import sys
 
 import pdfplumber
 
@@ -144,10 +145,19 @@ def extract_sheets(pdf_path, use_cache=True):
 
     with pdfplumber.open(pdf_path) as pdf:
         profile = detect_profile(pdf)
+        n = len(pdf.pages)
+        # First run only (no cache): extraction is slow, so show progress on
+        # stderr — otherwise the demo looks hung. Reports go to stdout, so this
+        # stays out of them.
+        print(f"[extract] {os.path.basename(pdf_path)}: {profile.name} template, "
+              f"reading {n} title blocks (first run; cached afterward)…",
+              file=sys.stderr, flush=True)
         sheets = []
         for i, page in enumerate(pdf.pages, start=1):
             number, title = extract_title_block(page, profile)
             sheets.append({"page": i, "number": number, "title": title})
+            if i % 25 == 0 or i == n:
+                print(f"[extract]   {i}/{n} pages", file=sys.stderr, flush=True)
 
     if use_cache:
         try:
