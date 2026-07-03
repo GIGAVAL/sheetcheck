@@ -1,0 +1,10 @@
+# The bid set PDF is large (43 MB) and downloadable from the source URL,
+# so we don't commit it to git.
+bidset.pdf
+*.pdf
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
