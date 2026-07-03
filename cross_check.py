@@ -2,65 +2,67 @@
 cross_check.py — SheetCheck QA/QC check
 
 Cross-checks the drawing set against its own Sheet Index (the master list
-of sheets printed on page 2). Three things can go wrong in a real set:
+of sheets, usually on page 2). Three things can go wrong in a real set:
 
   * MISSING  — the index lists a sheet, but no page in the PDF has it.
   * EXTRA    — a page exists whose sheet number isn't in the index.
   * MISMATCH — the sheet exists in both, but its title differs.
 
-The cover sheet is a special case: its title block is drawn as graphics,
-so no sheet number can be read from it. When exactly one page is
-unreadable and exactly one indexed "cover" sheet is unmatched, we infer
-the match rather than reporting a false "missing".
+The title-block layout and index columns vary by architecture firm, so the
+firm-specific bits come from a Profile (see profiles.py), detected from the
+PDF automatically.
 
 Usage:
-    python cross_check.py bidset.pdf
+    python cross_check.py <set.pdf>
 """
 
-import re
 import sys
 
 import pdfplumber
 
 from extract import extract_sheets
+from profiles import detect_profile
 
 
-# The sheet index on page 2 is a two-column list. Sheet numbers sit in two
-# narrow x-bands; each title runs to the right of its number for a fixed
-# column width. These bands come from measuring page 2 (see project notes).
-INDEX_PAGE = 2
-NUM_RE = re.compile(r"^[A-Z]{1,3}[0-9][0-9A-Z.]*$")
-COL_BANDS = ((1000, 1050), (1590, 1650))
-TITLE_COL_WIDTH = 545
-INDEX_TEXT_MAX_SIZE = 12
-
-
-def parse_sheet_index(page):
+def parse_sheet_index(page, profile):
     """Return the sheet index as an ordered list of (number, title).
 
-    Order is the index's own reading order: down column 1, then down
-    column 2. Callers that want lookup can do ``dict(parse_sheet_index(...))``.
+    Works for any number of columns: sheet numbers are found by the profile's
+    pattern, then each title is the text to the right of its number up to the
+    next number on the same row (which is the start of the next column).
     """
     words = [w for w in page.extract_words(extra_attrs=["size"])
-             if w["size"] < INDEX_TEXT_MAX_SIZE]
+             if w["size"] < profile.index_text_max_size]
+    numbers = [w for w in words if profile.index_number_re.match(w["text"])]
+    if not numbers:
+        return []
 
-    def band(x0):
-        for i, (lo, hi) in enumerate(COL_BANDS):
-            if lo < x0 < hi:
+    # Cluster number x-positions into columns so we can read down each column.
+    xs = sorted({round(n["x0"]) for n in numbers})
+    clusters = []
+    for x in xs:
+        if clusters and x - clusters[-1][-1] <= 40:
+            clusters[-1].append(x)
+        else:
+            clusters.append([x])
+
+    def column_of(n):
+        for i, cl in enumerate(clusters):
+            if cl[0] - 1 <= round(n["x0"]) <= cl[-1] + 1:
                 return i
-        return None
+        return len(clusters)
 
-    numbers = [w for w in words
-               if NUM_RE.match(w["text"]) and "." in w["text"]
-               and band(w["x0"]) is not None]
-    numbers.sort(key=lambda w: (band(w["x0"]), w["top"]))   # reading order
+    numbers.sort(key=lambda n: (column_of(n), n["top"]))   # reading order
 
     entries = []
     for n in numbers:
-        right_edge = n["x0"] + TITLE_COL_WIDTH
-        same_line = [w for w in words if abs(w["top"] - n["top"]) < 5
-                     and n["x1"] < w["x0"] < right_edge]
-        title = " ".join(w["text"] for w in sorted(same_line, key=lambda w: w["x0"]))
+        later = [m["x0"] for m in numbers
+                 if abs(m["top"] - n["top"]) < 5 and m["x0"] > n["x1"]]
+        right_bound = min(later) if later else n["x0"] + profile.index_title_fallback_width
+        title_words = [w for w in words
+                       if abs(w["top"] - n["top"]) < 5
+                       and n["x1"] < w["x0"] < right_bound - 1]
+        title = " ".join(w["text"] for w in sorted(title_words, key=lambda w: w["x0"]))
         entries.append((n["text"], title.strip()))
     return entries
 
@@ -75,7 +77,6 @@ def cross_check(block_rows, index):
 
     block_rows: list of (page_number, sheet_number, sheet_title)
     index:      {sheet_number: title}
-
     Returns (missing, extra, mismatches, duplicates).
     """
     block = {}
@@ -102,17 +103,19 @@ def cross_check(block_rows, index):
 
 
 def reconcile_cover(block_rows, index, missing):
-    """Infer the cover match for the one unreadable page, if unambiguous.
+    """Infer the cover/title match for the one unreadable page, if unambiguous.
 
-    Returns (updated_block_rows, inferred, remaining_missing) where
-    ``inferred`` is a list of (page, number, title).
+    Some firms draw the cover's sheet number as graphics (no selectable text),
+    so it reads blank. When exactly one page is unreadable and exactly one
+    unmatched index entry looks like a cover/title sheet, pair them.
+    Returns (updated_block_rows, inferred, remaining_missing).
     """
     unreadable = [pg for pg, num, _ in block_rows if not num]
-    cover_missing = [m for m in missing if "COVER" in index[m].upper()]
+    markers = ("COVER", "TITLE SHEET")
+    candidates = [m for m in missing if any(k in index[m].upper() for k in markers)]
 
-    if len(unreadable) == 1 and len(cover_missing) == 1:
-        page = unreadable[0]
-        number = cover_missing[0]
+    if len(unreadable) == 1 and len(candidates) == 1:
+        page, number = unreadable[0], candidates[0]
         title = index[number]
         block_rows = [
             (pg, number, title) if pg == page else (pg, num, t)
@@ -123,21 +126,21 @@ def reconcile_cover(block_rows, index, missing):
     return block_rows, [], missing
 
 
-def print_report(index, block_rows, missing, extra, mismatches, duplicates, inferred):
+def print_report(profile, index, block_rows, missing, extra, mismatches, duplicates, inferred):
     found = sum(1 for _, num, _ in block_rows if num)
     still_unreadable = [pg for pg, num, _ in block_rows if not num]
 
     print("=" * 70)
-    print("SHEET INDEX CROSS-CHECK")
+    print(f"SHEET INDEX CROSS-CHECK   [{profile.name} template]")
     print("=" * 70)
-    print(f"Index (page {INDEX_PAGE}) lists {len(index)} sheets.")
+    print(f"Index (page {profile.index_page}) lists {len(index)} sheets.")
     print(f"Title blocks matched {found} sheets across {len(block_rows)} pages.")
     print()
 
     if inferred:
         print(f"[i] INFERRED — page had no readable sheet number, matched by position ({len(inferred)}):")
         for page, number, title in inferred:
-            print(f"      page {page} -> {number:<8} {title!r}  (cover sheet, inferred)")
+            print(f"      page {page} -> {number:<8} {title!r}  (cover/title sheet, inferred)")
         print()
 
     print(f"[A] MISSING — in the index but not found in the set ({len(missing)}):")
@@ -186,11 +189,12 @@ def print_report(index, block_rows, missing, extra, mismatches, duplicates, infe
 def run(pdf_path):
     block_rows = [(s["page"], s["number"], s["title"]) for s in extract_sheets(pdf_path)]
     with pdfplumber.open(pdf_path) as pdf:
-        index = dict(parse_sheet_index(pdf.pages[INDEX_PAGE - 1]))
+        profile = detect_profile(pdf)
+        index = dict(parse_sheet_index(pdf.pages[profile.index_page - 1], profile))
 
     missing, extra, mismatches, duplicates = cross_check(block_rows, index)
     block_rows, inferred, missing = reconcile_cover(block_rows, index, missing)
-    print_report(index, block_rows, missing, extra, mismatches, duplicates, inferred)
+    print_report(profile, index, block_rows, missing, extra, mismatches, duplicates, inferred)
 
 
 def main():

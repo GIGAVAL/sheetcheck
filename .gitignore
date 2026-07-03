@@ -9,8 +9,12 @@ bidset.pdf
 # macOS
 .DS_Store
 
+# Demo downloads the bid sets here
+data/
+
 # Python
 __pycache__/
 *.pyc
 .venv/
 venv/
+.pytest_cache/

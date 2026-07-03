@@ -35,14 +35,19 @@ def print_table(rows):
         print(f"{page_no:>{pg_w}}  {(number or '(none)'):<{num_w}}  {title or '(none)'}")
 
 
-def main():
-    pdf_path = sys.argv[1] if len(sys.argv) > 1 else "bidset.pdf"
+def run(pdf_path):
     rows = build_index(pdf_path)
+    print("=" * 70)
+    print("SHEET INDEX")
+    print("=" * 70)
     print_table(rows)
-
     found = sum(1 for _, num, _ in rows if num)
     print()
     print(f"{len(rows)} pages scanned — sheet number found on {found}.")
+
+
+def main():
+    run(sys.argv[1] if len(sys.argv) > 1 else "bidset.pdf")
 
 
 if __name__ == "__main__":

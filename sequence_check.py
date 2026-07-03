@@ -1,7 +1,7 @@
 """
 sequence_check.py — SheetCheck QA/QC check
 
-Two order-related checks that the index cross-check doesn't cover:
+Two order-related checks the index cross-check doesn't cover:
 
   [A] PAGE ORDER — do the PDF pages appear in the same order the sheet
       index lists them? Sheets bound out of order are a common assembly
@@ -14,7 +14,7 @@ Two order-related checks that the index cross-check doesn't cover:
       it -> probably intentional) or present in the index (a real omission).
 
 Usage:
-    python sequence_check.py bidset.pdf
+    python sequence_check.py <set.pdf>
 """
 
 import re
@@ -23,19 +23,21 @@ import sys
 import pdfplumber
 
 from extract import extract_sheets
-from cross_check import parse_sheet_index, reconcile_cover, INDEX_PAGE
+from profiles import detect_profile
+from cross_check import parse_sheet_index, reconcile_cover
 
 
 def _load(pdf_path):
-    """Return (block_rows in page order, ordered index entries)."""
+    """Return (profile, block_rows in page order, ordered index entries)."""
     block_rows = [(s["page"], s["number"], s["title"]) for s in extract_sheets(pdf_path)]
     with pdfplumber.open(pdf_path) as pdf:
-        index_entries = parse_sheet_index(pdf.pages[INDEX_PAGE - 1])
+        profile = detect_profile(pdf)
+        index_entries = parse_sheet_index(pdf.pages[profile.index_page - 1], profile)
     # Fill the cover so page 1 participates in the order check.
     index = dict(index_entries)
     missing = [n for n in index if n not in {b[1] for b in block_rows}]
     block_rows, _, _ = reconcile_cover(block_rows, index, missing)
-    return block_rows, index_entries
+    return profile, block_rows, index_entries
 
 
 # --- [A] page order --------------------------------------------------------
@@ -68,7 +70,7 @@ def numbering_gaps(numbers, index_numbers):
 
     Returns a list of (missing_number, present_sorted, in_index_bool).
     """
-    groups = {}   # (prefix, suffix) -> {value: original_number}
+    groups = {}
     for num in numbers:
         parsed = _split_trailing_number(num)
         if not parsed:
@@ -88,9 +90,9 @@ def numbering_gaps(numbers, index_numbers):
     return gaps
 
 
-def print_report(block_rows, index_entries, inversions, gaps):
+def print_report(profile, inversions, gaps):
     print("=" * 70)
-    print("SEQUENCE CHECK")
+    print(f"SEQUENCE CHECK   [{profile.name} template]")
     print("=" * 70)
 
     print(f"[A] PAGE ORDER — PDF order vs index order ({len(inversions)} break(s)):")
@@ -117,13 +119,13 @@ def print_report(block_rows, index_entries, inversions, gaps):
 
 
 def run(pdf_path):
-    block_rows, index_entries = _load(pdf_path)
+    profile, block_rows, index_entries = _load(pdf_path)
     index_numbers = {n for n, _ in index_entries}
     present_numbers = [num for _, num, _ in block_rows if num]
 
     inversions = order_inversions(block_rows, index_entries)
     gaps = numbering_gaps(present_numbers, index_numbers)
-    print_report(block_rows, index_entries, inversions, gaps)
+    print_report(profile, inversions, gaps)
 
 
 def main():
