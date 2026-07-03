@@ -135,6 +135,43 @@ Reported honestly rather than hidden:
 
 ---
 
+## Design notes
+
+A few decisions that shaped the code, and why:
+
+- **Font size over coordinates (or OCR).** Title blocks differ by firm, but
+  typography is stable *within* a firm: the sheet number is the biggest token in
+  the corner, the title is the next size down. Keying on size instead of hard-coded
+  pixels is what let the same extractor survive a 96-page set from a different
+  architect. The load-bearing insight — *the sheet number is the biggest corner
+  token **with a digit*** — is what separates it from the same-size `CD` phase code.
+- **Firm-specific logic lives in one file.** `profiles.py` isolates every difference
+  (title orientation, index columns, number pattern, detection marker). Supporting a
+  new architect is a data change — one `Profile` — not a code change scattered across
+  the checks. The firm is detected from the architect's name stamped on the sheets,
+  so the right profile is chosen automatically.
+- **Extraction and checks are separate, and extraction is cached.** The slow,
+  I/O-heavy PDF parsing happens once and is memoized to disk; the checks are pure
+  functions over plain lists/dicts. That split is why the checks are trivially
+  unit-testable (no PDFs) and why the second run is instant.
+- **Report, don't "correct."** A QA tool's value is surfacing what's actually on the
+  sheet. So the extractor reproduces the real `LEGENDS AND LEGENDS NOTES` typo
+  verbatim rather than auto-fixing it, and the checks distinguish real findings
+  (a partial set, an unindexed sheet) from tool blind spots (the graphics-only cover,
+  which is inferred, not flagged).
+
+### What I'd build next
+
+- **A third firm — and a calibration harness.** Adding profiles by hand-measuring a
+  title block doesn't scale. The next step is a small tool that samples a set and
+  proposes a profile (title size/orientation, index columns) for review.
+- **Machine-readable output + CI gating.** Emit JSON/CSV and exit non-zero on
+  discrepancies, so a set can be checked automatically on every issue in a pipeline.
+- **Confidence scores.** Flag low-confidence extractions (like the two rotated
+  academy titles) for human review instead of silently reporting them.
+- **Cross-check beyond the index.** Compare sheet references, revision clouds, and
+  issue dates against the project manual — the next tier of real QA/QC.
+
 ## Project layout
 
 ```
