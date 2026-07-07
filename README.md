@@ -2,12 +2,16 @@
 
 QA/QC for architectural drawing-set PDFs. SheetCheck reads a bid set, pulls the
 **sheet number and title out of every title block**, and checks the set against
-its own **sheet index** — catching dropped sheets, unindexed sheets, mis-ordered
+its own **sheet index**, catching dropped sheets, unindexed sheets, mis-ordered
 sheets, and title mismatches that are otherwise found by hand, sheet by sheet.
 
-It runs on real, messy PDFs from **different architecture firms** — whose title
-blocks are laid out completely differently — by detecting the template and
+It runs on real, messy PDFs from **different architecture firms**, whose title
+blocks are laid out completely differently, by detecting the template and
 adapting.
+
+## Why I built this
+
+I've spent 14 years at large AEC firms in New York. QA/QC on a GMP set still means architects and engineers going page by page through hundreds of sheets of consultant documents, marking up Bluebeam by hand with notes and symbols. SheetCheck automates the text-verifiable slice of that work. I built it in a week, my first repo, to close my own tooling gap and to prove the workflow I want to bring to firms: a domain expert directing AI coding tools to ship something real. The checks are modeled on the drawing and coordination checklists large firms actually use.
 
 ---
 
@@ -19,29 +23,29 @@ both:
 
 | Set | Firm | Title block | Sheets | Result |
 |---|---|---|---|---|
-| UCCS Cybersecurity & Space ISAC | **SmithGroup** | horizontal titles, 2-column index | 133 | ✅ **PASS** — every sheet matches the index |
-| Holabird Academy PK-8 (Baltimore) | **Grimm & Parker** | titles rotated 90°, 3-column index | 96 | ⚠️ **partial set** — 199 of 294 indexed sheets absent + 1 unindexed sheet |
+| UCCS Cybersecurity & Space ISAC | **SmithGroup** | horizontal titles, 2-column index | 133 | ✅ **PASS**: every sheet matches the index |
+| Holabird Academy PK-8 (Baltimore) | **Grimm & Parker** | titles rotated 90°, 3-column index | 96 | ⚠️ **partial set**: 199 of 294 indexed sheets absent + 1 unindexed sheet |
 
 **On the SmithGroup set** (`RESULT: PASS`):
 - All 133 sheets are present, correctly numbered, and their titles match the index.
 - The **cover sheet** has no selectable sheet number (it's drawn as graphics), so
   SheetCheck *infers* it (`page 1 → G0.0 "PROJECT COVER SHEET"`) instead of raising
   a false alarm.
-- It faithfully reproduces a **real drafter typo** — sheet `T0.0.2`'s title reads
+- It faithfully reproduces a **real drafter typo**: sheet `T0.0.2`'s title reads
   `TECHNOLOGY INFRASTRUCTURE LEGENDS AND LEGENDS NOTES` (should be "GENERAL"). The
-  tool reports what's actually on the sheet — it neither "corrects" nor garbles it —
+  tool reports what's actually on the sheet, it neither "corrects" nor garbles it,
   so a reviewer sees the error. (There's a regression test for exactly this string.)
 
-**On the Grimm & Parker set** (`RESULT: DISCREPANCIES FOUND`) — and these are the
+**On the Grimm & Parker set** (`RESULT: DISCREPANCIES FOUND`), and these are the
 *right* discrepancies to find:
 - This PDF is the **Architectural & Structural volume** of a larger project. Its
   index lists all **294** sheets across every discipline (civil, MEP, landscape,
   photovoltaics…), but only **96** are in this file. SheetCheck reports the 199
-  absent sheets — i.e. it correctly detects a **partial set**.
+  absent sheets, i.e. it correctly detects a **partial set**.
 - It finds **1 sheet in the set that the index never lists**: `A-4.2a "BUILDING
-  SECTIONS"` (page 34) — an inserted sheet nobody added to the index.
+  SECTIONS"` (page 34), an inserted sheet nobody added to the index.
 - Its titles are set **rotated 90°**; SheetCheck reads them (e.g. `A-1.1 → "PARTIAL
-  FIRST FLOOR PLAN - AREA A"`). Two of 96 titles are imperfect — see
+  FIRST FLOOR PLAN - AREA A"`). Two of 96 titles are imperfect, see
   [Known limitations](#known-limitations); they're reported honestly, not hidden.
 
 ---
@@ -49,7 +53,7 @@ both:
 ## Try it yourself
 
 ```bash
-git clone <this-repo> && cd sheetcheck
+git clone https://github.com/GIGAVAL/sheetcheck && cd sheetcheck
 pip install -r requirements.txt
 python demo.py
 ```
@@ -73,13 +77,13 @@ python sequence_check.py data/cybersecurity_bidset.pdf  # order + numbering gaps
 
 ## The checks
 
-- **`sheet_index.py`** — the raw extraction: a table of *page → sheet number →
+- **`sheet_index.py`**, the raw extraction: a table of *page → sheet number →
   sheet title* for every page. This is the foundation the others build on.
-- **`cross_check.py`** — compares the set against the sheet index on page 2 and
+- **`cross_check.py`**: compares the set against the sheet index on page 2 and
   reports **MISSING** (indexed but absent), **EXTRA** (present but unindexed),
   **TITLE MISMATCH**, and duplicate numbers.
-- **`sequence_check.py`** — checks that pages are **bound in index order** and
-  flags **numbering gaps** within a discipline (advisory — it notes whether the
+- **`sequence_check.py`**: checks that pages are **bound in index order** and
+  flags **numbering gaps** within a discipline (advisory: it notes whether the
   index also skips the number, i.e. whether the gap is intentional).
 
 ---
@@ -87,10 +91,10 @@ python sequence_check.py data/cybersecurity_bidset.pdf  # order + numbering gaps
 ## How it works
 
 - **[pdfplumber](https://github.com/jsvine/pdfplumber)** extracts text with position,
-  size, and orientation. (The sets are vector PDFs — no OCR needed. SheetCheck
+  size, and orientation. (The sets are vector PDFs: no OCR needed. SheetCheck
   verifies text is extractable rather than assuming it.)
 - **Font size, not pixel coordinates**, locates the important text. The sheet number
-  is the biggest token in the bottom-right corner *that contains a digit* — which
+  is the biggest token in the bottom-right corner *that contains a digit*, which
   cleanly beats the same-size `CD` phase code sitting next to it.
 - **Template profiles** (`profiles.py`) hold the firm-specific bits: horizontal vs.
   90°-rotated titles, 2- vs. 3-column indexes, sheet-number patterns. The firm is
@@ -113,9 +117,9 @@ pytest
 disambiguation, horizontal and rotated title reading, 2- and 3-column index parsing,
 profile detection, and every check's logic. Including:
 
-- `test_reproduces_real_legends_typo` — reproduces the real `LEGENDS AND LEGENDS
+- `test_reproduces_real_legends_typo`: reproduces the real `LEGENDS AND LEGENDS
   NOTES` defect, proving the extractor reports real content verbatim.
-- `test_index_number_pattern_rejects_consultant_name` — guards a real false positive
+- `test_index_number_pattern_rejects_consultant_name`: guards a real false positive
   (the consultant name "NV5" once parsed as a sheet number).
 
 ---
@@ -130,7 +134,7 @@ Reported honestly rather than hidden:
   column edge. 94 of 96 titles read cleanly.
 - **Profiles are per-firm.** Two templates are supported today; a third firm needs a
   new `Profile` (and, if its title block is exotic, a new title reader). The
-  architecture is built for this — the firm-specific logic is isolated in one file.
+  architecture is built for this: the firm-specific logic is isolated in one file.
 - The sheet index is assumed to be on page 2 (configurable per profile).
 
 ---
@@ -143,11 +147,11 @@ A few decisions that shaped the code, and why:
   typography is stable *within* a firm: the sheet number is the biggest token in
   the corner, the title is the next size down. Keying on size instead of hard-coded
   pixels is what let the same extractor survive a 96-page set from a different
-  architect. The load-bearing insight — *the sheet number is the biggest corner
-  token **with a digit*** — is what separates it from the same-size `CD` phase code.
+  architect. The load-bearing insight, *the sheet number is the biggest corner
+  token **with a digit***, is what separates it from the same-size `CD` phase code.
 - **Firm-specific logic lives in one file.** `profiles.py` isolates every difference
   (title orientation, index columns, number pattern, detection marker). Supporting a
-  new architect is a data change — one `Profile` — not a code change scattered across
+  new architect is a data change, one `Profile`, not a code change scattered across
   the checks. The firm is detected from the architect's name stamped on the sheets,
   so the right profile is chosen automatically.
 - **Extraction and checks are separate, and extraction is cached.** The slow,
@@ -162,7 +166,7 @@ A few decisions that shaped the code, and why:
 
 ### What I'd build next
 
-- **A third firm — and a calibration harness.** Adding profiles by hand-measuring a
+- **A third firm, and a calibration harness.** Adding profiles by hand-measuring a
   title block doesn't scale. The next step is a small tool that samples a set and
   proposes a profile (title size/orientation, index columns) for review.
 - **Machine-readable output + CI gating.** Emit JSON/CSV and exit non-zero on
@@ -170,7 +174,7 @@ A few decisions that shaped the code, and why:
 - **Confidence scores.** Flag low-confidence extractions (like the two rotated
   academy titles) for human review instead of silently reporting them.
 - **Cross-check beyond the index.** Compare sheet references, revision clouds, and
-  issue dates against the project manual — the next tier of real QA/QC.
+  issue dates against the project manual, the next tier of real QA/QC.
 
 ## Project layout
 
