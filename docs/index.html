@@ -1,3 +1,4 @@
+<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SheetCheck — live demo</title>
@@ -156,6 +157,9 @@
   .disc-grid .d b{font-family:var(--mono); color:var(--brand-ink)}
   .disc-grid .d span{color:var(--faint); float:right}
 
+  @keyframes flashnew{from{box-shadow:0 0 0 4px rgba(181,71,8,.30)}to{box-shadow:0 0 0 4px rgba(181,71,8,0)}}
+  .flash-new{animation:flashnew 1.4s ease-out 1; border-radius:10px}
+
   .clean-note{
     display:flex; align-items:center; gap:9px; padding:12px 14px;
     background:var(--ok-bg); border:1px solid var(--ok-line); border-radius:10px;
@@ -243,6 +247,8 @@
     <div class="runline">
       <span class="pulse"></span>
       <span id="runline-text">running checks…</span>
+      <span>·</span>
+      <a href="https://github.com/GIGAVAL/sheetcheck" style="color:#9fc0e0">view the code</a>
     </div>
   </div>
 </header>
@@ -254,7 +260,8 @@
   JavaScript port of SheetCheck's real check logic running on real extraction
   output from two public bid sets.<br>
   No install, no network, no server. The Python source of truth is
-  <code>cross_check.py</code>, <code>sequence_check.py</code>, and <code>extract.py</code>.
+  <code>cross_check.py</code>, <code>sequence_check.py</code>, and <code>extract.py</code> —
+  full code at <a href="https://github.com/GIGAVAL/sheetcheck">github.com/GIGAVAL/sheetcheck</a>.
 </footer>
 
 <script>
@@ -645,7 +652,7 @@ function renderCard(i){
     : `<div class="clean-note">✓ No discrepancies — the set matches its index and the pages are in order.</div>`;
 
   const inj = st.injections.length
-    ? `<div class="injbanner show"><span class="ico">⚠</span><div><b>Defect injected.</b> ${st.injections.map(esc).join(" &nbsp;·&nbsp; ")}<br>The checks above re-ran on the altered set and flagged it.</div></div>`
+    ? `<div class="injbanner show"><span class="ico">⚠</span><div><b>Defect injected — the checks above re-ran on the altered set and flagged it.</b><br>${st.injections.map(esc).join("<br>")}</div></div>`
     : `<div class="injbanner"></div>`;
 
   return `
@@ -673,9 +680,9 @@ function renderCard(i){
         </div>
         <p class="sub">Tamper with the data the way a real assembly mistake would, then watch the checks catch it live.</p>
         <div class="btns">
-          <button onclick="inject(${i},'remove')">Remove a sheet</button>
-          <button onclick="inject(${i},'alter')">Alter a title</button>
-          <button onclick="inject(${i},'shuffle')">Shuffle page order</button>
+          <button onclick="inject(${i},'remove')" ${st.applied.includes("remove")?"disabled":""}>Remove a sheet</button>
+          <button onclick="inject(${i},'alter')" ${st.applied.includes("alter")?"disabled":""}>Alter a title</button>
+          <button onclick="inject(${i},'shuffle')" ${st.applied.includes("shuffle")?"disabled":""}>Shuffle page order</button>
         </div>
         ${inj}
       </div>
@@ -692,10 +699,10 @@ function renderCard(i){
    Defect injection — mutate a working copy, then re-render (re-runs checks).
    ======================================================================= */
 const TARGETS = [
-  // Cyber (SmithGroup)
-  { remove:14, alter:6, alterTitle:"PARTIAL FLOOR PLAN (PLACEHOLDER — REVISE)", shuffle:[30,31] },
-  // Academy (Grimm & Parker)
-  { remove:16, alter:32, alterTitle:"BUILDING SECTIONS (PLACEHOLDER — REVISE)", shuffle:[42,43] },
+  // Cyber (SmithGroup): retitle A2.1.2 with A2.1.3's title — a classic copy/paste slip.
+  { remove:14, alter:15, alterTitle:"LEVEL 1 - FLOOR PLAN - NORTH - AREA B", shuffle:[30,31] },
+  // Academy (Grimm & Parker): retitle A-1.1 with A-1.2's title.
+  { remove:16, alter:10, alterTitle:"PARTIAL FIRST FLOOR PLAN - AREA B", shuffle:[42,43] },
 ];
 
 let state = [];
@@ -703,6 +710,7 @@ function initState(){
   state = SETS.map(s => ({
     working: s.sheets.map(x => ({...x})),
     injections: [],
+    applied: [],
   }));
 }
 
@@ -710,6 +718,8 @@ function byPage(sheets, page){ return sheets.find(r => r.page === page); }
 
 function inject(i, kind){
   const st = state[i], t = TARGETS[i];
+  if(st.applied.includes(kind)) return;
+  st.applied.push(kind);
   if(kind === "remove"){
     const s = byPage(st.working, t.remove);
     if(!s){ return; }
@@ -720,7 +730,7 @@ function inject(i, kind){
     if(!s) return;
     const old = s.title;
     s.title = t.alterTitle;
-    st.injections.push(`Retitled ${s.number}: “${old}” → “${t.alterTitle}”`);
+    st.injections.push(`Retitled ${s.number} with the next sheet's title (a copy/paste slip): “${old}” → “${t.alterTitle}”`);
   } else if(kind === "shuffle"){
     const [pa, pb] = t.shuffle;
     const a = byPage(st.working, pa), b = byPage(st.working, pb);
@@ -730,15 +740,15 @@ function inject(i, kind){
     b.number = an; b.title = at;
     st.injections.push(`Swapped the sheets on pages ${pa} and ${pb}`);
   }
-  rerender(i);
+  rerender(i, true);
 }
 
 function reset(i){
-  state[i] = { working: SETS[i].sheets.map(x => ({...x})), injections: [] };
+  state[i] = { working: SETS[i].sheets.map(x => ({...x})), injections: [], applied: [] };
   rerender(i);
 }
 
-function rerender(i){
+function rerender(i, flash){
   const card = document.getElementById("card-" + i);
   const openRaw = card && card.querySelector("details.raw") && card.querySelector("details.raw").open;
   const tmp = document.createElement("div");
@@ -746,6 +756,10 @@ function rerender(i){
   const fresh = tmp.firstElementChild;
   if(openRaw){ const d = fresh.querySelector("details.raw"); if(d) d.open = true; }
   card.replaceWith(fresh);
+  if(flash){
+    const f = fresh.querySelector("#findings-" + i);
+    if(f){ f.classList.add("flash-new"); f.scrollIntoView({behavior:"smooth", block:"nearest"}); }
+  }
 }
 
 /* ==========================================================================
