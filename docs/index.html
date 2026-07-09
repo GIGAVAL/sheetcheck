@@ -676,13 +676,13 @@ function renderCard(i){
       <div class="inject">
         <div class="hd">
           <h3>🧪 Inject a defect</h3>
-          <button class="reset" onclick="reset(${i})" ${st.injections.length?"":"disabled"}>↺ Reset to real set</button>
+          <button class="reset" data-act="reset" data-i="${i}" ${st.injections.length?"":"disabled"}>↺ Reset to real set</button>
         </div>
         <p class="sub">Tamper with the data the way a real assembly mistake would, then watch the checks catch it live.</p>
         <div class="btns">
-          <button onclick="inject(${i},'remove')" ${st.applied.includes("remove")?"disabled":""}>Remove a sheet</button>
-          <button onclick="inject(${i},'alter')" ${st.applied.includes("alter")?"disabled":""}>Alter a title</button>
-          <button onclick="inject(${i},'shuffle')" ${st.applied.includes("shuffle")?"disabled":""}>Shuffle page order</button>
+          <button data-kind="remove" data-i="${i}" ${st.applied.includes("remove")?"disabled":""}>Remove a sheet</button>
+          <button data-kind="alter" data-i="${i}" ${st.applied.includes("alter")?"disabled":""}>Alter a title</button>
+          <button data-kind="shuffle" data-i="${i}" ${st.applied.includes("shuffle")?"disabled":""}>Shuffle page order</button>
         </div>
         ${inj}
       </div>
@@ -767,7 +767,17 @@ function rerender(i, flash){
    ======================================================================= */
 function boot(){
   initState();
-  document.getElementById("sets").innerHTML = SETS.map((_, i) => renderCard(i)).join("");
+  const sets = document.getElementById("sets");
+  sets.innerHTML = SETS.map((_, i) => renderCard(i)).join("");
+  // Delegated clicks: lives on the container, so it survives card re-renders
+  // and needs no inline handlers (works under strict CSP sandboxes).
+  sets.addEventListener("click", e => {
+    const b = e.target.closest("button[data-i]");
+    if(!b || b.disabled) return;
+    const i = Number(b.dataset.i);
+    if(b.dataset.act === "reset") reset(i);
+    else if(b.dataset.kind) inject(i, b.dataset.kind);
+  });
   const total = SETS.reduce((n, s) => n + s.sheets.length, 0);
   document.getElementById("runline-text").textContent =
     `checked ${SETS.length} sets · ${total} pages · ${SETS.reduce((n,s)=>n+s.index_entries.length,0)} indexed sheets, all in-browser`;
