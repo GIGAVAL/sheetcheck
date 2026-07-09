@@ -1,5 +1,14 @@
 # SheetCheck
 
+### ▶︎ [Try the live demo — no install, runs in your browser](https://gigaval.github.io/sheetcheck/)
+
+The real checks, running on real extraction output from both bid sets, with an
+"inject a defect" mode so you can watch them catch a dropped sheet, a mis-titled
+drawing, or a page bound out of order. It's one self-contained HTML file
+([`docs/index.html`](docs/index.html)) — no download, no server, no Python.
+
+---
+
 QA/QC for architectural drawing-set PDFs. SheetCheck reads a bid set, pulls the
 **sheet number and title out of every title block**, and checks the set against
 its own **sheet index**, catching dropped sheets, unindexed sheets, mis-ordered
