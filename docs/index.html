@@ -1,10 +1,10 @@
 <!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SheetCheck — live demo</title>
+<title>SheetCheck, live demo</title>
 
 <!-- ==========================================================================
-     SheetCheck — self-contained demo (no build step, no network, no install).
+     SheetCheck, self-contained demo (no build step, no network, no install).
      Double-click this file to open it in any browser.
 
      Everything below is inlined:
@@ -240,8 +240,8 @@
     <p class="lede">
       SheetCheck reads the sheet index and every title block straight out of a
       drawing-set PDF, then cross-checks them against each other. It catches the
-      quiet mistakes that slip into bid sets — missing sheets, unindexed pages,
-      mis-titled drawings, and sheets bound out of order — before they turn into
+      quiet mistakes that slip into bid sets, missing sheets, unindexed pages,
+      mis-titled drawings, and sheets bound out of order, before they turn into
       RFIs and addenda.
     </p>
     <div class="runline">
@@ -256,11 +256,11 @@
 <main class="wrap" id="sets"></main>
 
 <footer class="wrap">
-  Live demo — the two reports below were produced in your browser just now, by a
+  Live demo. The two reports below were produced in your browser just now, by a
   JavaScript port of SheetCheck's real check logic running on real extraction
   output from two public bid sets.<br>
   No install, no network, no server. The Python source of truth is
-  <code>cross_check.py</code>, <code>sequence_check.py</code>, and <code>extract.py</code> —
+  <code>cross_check.py</code>, <code>sequence_check.py</code>, and <code>extract.py</code>,
   full code at <a href="https://github.com/GIGAVAL/sheetcheck">github.com/GIGAVAL/sheetcheck</a>.
 </footer>
 
@@ -275,7 +275,7 @@
 const SETS = JSON.parse(document.getElementById("sheetcheck-data").textContent);
 
 /* ==========================================================================
-   Check logic — a faithful JavaScript port of the Python modules.
+   Check logic, a faithful JavaScript port of the Python modules.
    ======================================================================= */
 
 // cross_check.normalize
@@ -374,12 +374,12 @@ function discipline(num){ const m = num.match(/^[A-Z]+/); return m ? m[0] : "?";
 
 const DISC_NAMES = {
   A:"Architectural", S:"Structural", C:"Civil", G:"General", K:"Food Service",
-  E:"Electrical", ED:"Electrical — Demolition", EL:"Lighting", EMP:"Electrical M&P",
+  E:"Electrical", ED:"Electrical, Demolition", EL:"Lighting", EMP:"Electrical M&P",
   F:"Forest Conservation", FP:"Fire Protection", L:"Landscape",
-  M:"Mechanical", MD:"Mechanical — Demolition", UM:"Utilities — Mechanical",
-  P:"Plumbing", PD:"Plumbing — Demolition", T:"Technology", TS:"Title/General",
-  TY:"Security", Y:"Security", W:"Photovoltaics", AD:"Architectural — Demolition",
-  AF:"Architectural — Finishes",
+  M:"Mechanical", MD:"Mechanical, Demolition", UM:"Utilities, Mechanical",
+  P:"Plumbing", PD:"Plumbing, Demolition", T:"Technology", TS:"Title/General",
+  TY:"Security", Y:"Security", W:"Photovoltaics", AD:"Architectural, Demolition",
+  AF:"Architectural, Finishes",
 };
 function discName(code){ return DISC_NAMES[code] || `“${code}” sheets`; }
 
@@ -398,7 +398,7 @@ function analyzeMissing(missing, presentNumbers){
 }
 
 // Editorial check: a word repeated immediately across "AND" ("LEGENDS AND
-// LEGENDS NOTES") — almost always a copy/paste slip in a title.
+// LEGENDS NOTES"), almost always a copy/paste slip in a title.
 function suspiciousTitles(blockRows){
   const out = [];
   for(const {page, number, title} of blockRows){
@@ -462,13 +462,13 @@ function buildFindings(res){
     const b = res.block[num];
     S("error", "Unindexed sheet",
       `<code>${esc(num)}</code> is in the set but not in the index`,
-      `<p>Page ${b.page} carries sheet <code>${esc(num)}</code> — “${esc(b.title)}” — but the sheet index never lists it. Either the sheet was added after the index was frozen, or the index is missing a line.</p>`,
+      `<p>Page ${b.page} carries sheet <code>${esc(num)}</code>, “${esc(b.title)}”, but the sheet index never lists it. Either the sheet was added after the index was frozen, or the index is missing a line.</p>`,
       "Index cross-check");
   }
   for(const num of res.inVolume){
     S("error", "Missing sheet",
       `<code>${esc(num)}</code> is indexed but not in the set`,
-      `<p>The index lists <code>${esc(num)}</code> — “${esc(res.index[num])}” — but no page in the file carries that sheet number. A sheet in this discipline was dropped.</p>`,
+      `<p>The index lists <code>${esc(num)}</code>, “${esc(res.index[num])}”, but no page in the file carries that sheet number. A sheet in this discipline was dropped.</p>`,
       "Index cross-check");
   }
   for(const inv of res.inversions){
@@ -480,7 +480,7 @@ function buildFindings(res){
   for(const g of res.gaps.filter(g => g.inIndex)){
     S("error", "Skipped sheet number",
       `<code>${esc(g.missing)}</code> is skipped, but the index expects it`,
-      `<p>The run ${JSON.stringify(g.present)} skips <code>${esc(g.missing)}</code>, and the index <em>does</em> list it — a real omission, not an intentional gap.</p>`,
+      `<p>The run ${JSON.stringify(g.present)} skips <code>${esc(g.missing)}</code>, and the index <em>does</em> list it, a real omission, not an intentional gap.</p>`,
       "Sequence check");
   }
 
@@ -499,11 +499,11 @@ function buildFindings(res){
     const total = outDiscs.reduce((n,d)=>n+res.outByDisc[d].length,0);
     const rows = outDiscs
       .sort((a,b)=>res.outByDisc[b].length - res.outByDisc[a].length)
-      .map(d => `<div class="d"><b>${esc(d)}</b> — ${esc(discName(d))}<span>${res.outByDisc[d].length}</span></div>`)
+      .map(d => `<div class="d"><b>${esc(d)}</b>, ${esc(discName(d))}<span>${res.outByDisc[d].length}</span></div>`)
       .join("");
     S("warning", "Partial volume",
-      `This file is one volume of a larger set — ${total} indexed sheets belong to disciplines drawn elsewhere`,
-      `<p>The master index lists <b>${res.indexCount}</b> sheets across the whole project, but this PDF only contains the <b>${[...new Set(res.presentNumbers.map(discipline))].map(discName).filter((v,i,a)=>a.indexOf(v)===i).slice(0,4).join(", ")}</b> volume. ${outDiscs.length} disciplines (${total} sheets) are indexed here but issued in separate volumes — expected, not ${total} errors.</p>
+      `This file is one volume of a larger set, ${total} indexed sheets belong to disciplines drawn elsewhere`,
+      `<p>The master index lists <b>${res.indexCount}</b> sheets across the whole project, but this PDF only contains the <b>${[...new Set(res.presentNumbers.map(discipline))].map(discName).filter((v,i,a)=>a.indexOf(v)===i).slice(0,4).join(", ")}</b> volume. ${outDiscs.length} disciplines (${total} sheets) are indexed here but issued in separate volumes, expected, not ${total} errors.</p>
        <details class="disc"><summary>Show the ${outDiscs.length} disciplines not in this file</summary>
          <div class="disc-grid">${rows}</div>
        </details>`,
@@ -519,22 +519,22 @@ function buildFindings(res){
   // ---- NOTES ----
   for(const inf of res.inferred){
     S("note", "Cover matched by position",
-      `Page ${inf.page} had no readable sheet number — inferred as <code>${esc(inf.number)}</code>`,
-      `<p>The cover’s number is drawn as graphics, so it read blank. Exactly one unmatched index entry looked like a cover/title sheet (“${esc(inf.title)}”), so SheetCheck paired them. Nothing is wrong here — it’s shown so the inference is auditable.</p>`,
+      `Page ${inf.page} had no readable sheet number, inferred as <code>${esc(inf.number)}</code>`,
+      `<p>The cover’s number is drawn as graphics, so it read blank. Exactly one unmatched index entry looked like a cover/title sheet (“${esc(inf.title)}”), so SheetCheck paired them. Nothing is wrong here. It’s shown so the inference is auditable.</p>`,
       "Cover reconciliation");
   }
   for(const s of res.suspicious){
     S("note", "Possible title typo",
       `<code>${esc(s.number)}</code> repeats a word: “…${esc(s.word)} AND ${esc(s.word)}…”`,
-      `<p>Page ${s.page}: “${esc(s.title)}”. The word <b>${esc(s.word)}</b> repeats immediately across “AND”, which usually means a copy/paste slip (e.g. “LEGENDS AND <s>LEGENDS</s> GENERAL NOTES”). The index and the sheet agree, so the checks pass — but it’s worth an editor’s eye.</p>`,
+      `<p>Page ${s.page}: “${esc(s.title)}”. The word <b>${esc(s.word)}</b> repeats immediately across “AND”, which usually means a copy/paste slip (e.g. “LEGENDS AND <s>LEGENDS</s> GENERAL NOTES”). The index and the sheet agree, so the checks pass, but it’s worth an editor’s eye.</p>`,
       "Editorial");
   }
   const advisory = res.gaps.filter(g => !g.inIndex);
   if(advisory.length){
     const list = advisory.map(g => `<div class="d"><b>${esc(g.missing)}</b><span>run ${JSON.stringify(g.present)}</span></div>`).join("");
     S("note", "Numbering gaps (advisory)",
-      `${advisory.length} skipped number${advisory.length>1?"s":""} within sheet runs — all also skipped by the index`,
-      `<p>These runs skip a number (e.g. A-3.3 → A-3.20), but the index skips the same numbers, so they’re almost certainly intentional — not dropped sheets. Flagged for awareness only.</p>
+      `${advisory.length} skipped number${advisory.length>1?"s":""} within sheet runs, all also skipped by the index`,
+      `<p>These runs skip a number (e.g. A-3.3 → A-3.20), but the index skips the same numbers, so they’re almost certainly intentional, not dropped sheets. Flagged for awareness only.</p>
        <details class="disc"><summary>Show the ${advisory.length} advisory gaps</summary><div class="disc-grid">${list}</div></details>`,
       "Sequence check");
   }
@@ -577,47 +577,47 @@ function renderRawReport(res, setData){
   cx += line("dim", `Index (page ${setData.index_page}) lists ${res.indexCount} sheets.`);
   cx += line("dim", `Title blocks matched ${res.matched} sheets across ${res.effective.length} pages.`);
   if(res.inferred.length){
-    cx += line("i", `[i] INFERRED — matched by position (${res.inferred.length}):`);
+    cx += line("i", `[i] INFERRED, matched by position (${res.inferred.length}):`);
     for(const inf of res.inferred) cx += line("i", `&nbsp;&nbsp;&nbsp;&nbsp;page ${inf.page} → ${esc(inf.number)}  “${esc(inf.title)}”  (cover/title, inferred)`);
   }
-  cx += line("A", `[A] MISSING — in the index but not in the set (${res.missing.length}):`);
+  cx += line("A", `[A] MISSING, in the index but not in the set (${res.missing.length}):`);
   if(res.missing.length){
     const outN = Object.values(res.outByDisc).reduce((n,a)=>n+a.length,0);
     if(outN) cx += line("dim", `&nbsp;&nbsp;&nbsp;&nbsp;${outN} of these belong to ${Object.keys(res.outByDisc).length} disciplines not in this volume (see Findings).`);
     const show = res.inVolume.length ? res.inVolume : res.missing.slice(0, 6);
     for(const n of show.slice(0,12)) cx += line("", `&nbsp;&nbsp;&nbsp;&nbsp;${esc(n)}&nbsp;&nbsp;<span class="dim">${esc(res.index[n])}</span>`);
     if(res.missing.length > 12 && !res.inVolume.length) cx += line("dim", `&nbsp;&nbsp;&nbsp;&nbsp;… and ${res.missing.length-12} more`);
-  } else cx += line("ok", `&nbsp;&nbsp;&nbsp;&nbsp;none — every indexed sheet is present.`);
-  cx += line("B", `[B] EXTRA — a page exists but the sheet isn’t in the index (${res.extra.length}):`);
+  } else cx += line("ok", `&nbsp;&nbsp;&nbsp;&nbsp;none, every indexed sheet is present.`);
+  cx += line("B", `[B] EXTRA, a page exists but the sheet isn’t in the index (${res.extra.length}):`);
   if(res.extra.length){ for(const n of res.extra){ const b=res.block[n]; cx += line("", `&nbsp;&nbsp;&nbsp;&nbsp;${esc(n)}&nbsp;&nbsp;page ${b.page}: <span class="dim">“${esc(b.title)}”</span>`); } }
-  else cx += line("ok", `&nbsp;&nbsp;&nbsp;&nbsp;none — every sheet is listed in the index.`);
-  cx += line("C", `[C] TITLE MISMATCH — present, but titles differ (${res.mismatches.length}):`);
+  else cx += line("ok", `&nbsp;&nbsp;&nbsp;&nbsp;none, every sheet is listed in the index.`);
+  cx += line("C", `[C] TITLE MISMATCH, present, but titles differ (${res.mismatches.length}):`);
   if(res.mismatches.length){ for(const m of res.mismatches){
     cx += line("", `&nbsp;&nbsp;&nbsp;&nbsp;${esc(m.number)} (page ${m.page})`);
     cx += line("dim", `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;index: “${esc(m.indexTitle)}”`);
     cx += line("dim", `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;sheet: “${esc(m.blockTitle)}”`);
-  } } else cx += line("ok", `&nbsp;&nbsp;&nbsp;&nbsp;none — all titles agree.`);
+  } } else cx += line("ok", `&nbsp;&nbsp;&nbsp;&nbsp;none, all titles agree.`);
   if(Object.keys(res.duplicates).length){
     cx += line("A", `[!] DUPLICATE sheet numbers (${Object.keys(res.duplicates).length}):`);
     for(const n of Object.keys(res.duplicates)) cx += line("", `&nbsp;&nbsp;&nbsp;&nbsp;${esc(n)}: pages ${res.duplicates[n].join(", ")}`);
   }
   const cxClean = !(res.inVolume.length || res.extra.length || res.mismatches.length || Object.keys(res.duplicates).length || res.unreadable.length);
-  cx += line("", `RESULT: <span class="${cxClean?"res-pass":"res-fail"}">${cxClean?"PASS — set matches its index.":"DISCREPANCIES FOUND (see above)."}</span>`);
+  cx += line("", `RESULT: <span class="${cxClean?"res-pass":"res-fail"}">${cxClean?"PASS, set matches its index.":"DISCREPANCIES FOUND (see above)."}</span>`);
   cx += `</div>`;
 
   // --- sequence panel ---
   let sq = `<div class="panel"><h5>SEQUENCE CHECK <span class="tmpl">[${esc(P)} template]</span></h5>`;
-  sq += line("A", `[A] PAGE ORDER — PDF order vs index order (${res.inversions.length} break(s)):`);
+  sq += line("A", `[A] PAGE ORDER, PDF order vs index order (${res.inversions.length} break(s)):`);
   if(res.inversions.length){ for(const inv of res.inversions) sq += line("", `&nbsp;&nbsp;&nbsp;&nbsp;page ${inv.pageA} (${esc(inv.numA)}) is followed by page ${inv.pageB} (${esc(inv.numB)}), but the index lists ${esc(inv.numB)} before ${esc(inv.numA)}.`); }
-  else sq += line("ok", `&nbsp;&nbsp;&nbsp;&nbsp;none — pages follow the index order.`);
-  sq += line("B", `[B] NUMBERING GAPS — advisory (${res.gaps.length} gap(s)):`);
+  else sq += line("ok", `&nbsp;&nbsp;&nbsp;&nbsp;none, pages follow the index order.`);
+  sq += line("B", `[B] NUMBERING GAPS, advisory (${res.gaps.length} gap(s)):`);
   if(res.gaps.length){ for(const g of res.gaps.slice(0,20)){
     const tag = g.inIndex ? "ALSO in index (real omission)" : "also skipped by index (likely intentional)";
-    sq += line(g.inIndex?"":"dim", `&nbsp;&nbsp;&nbsp;&nbsp;${esc(g.missing)}&nbsp;&nbsp;missing from run ${JSON.stringify(g.present)} — ${tag}`);
+    sq += line(g.inIndex?"":"dim", `&nbsp;&nbsp;&nbsp;&nbsp;${esc(g.missing)}&nbsp;&nbsp;missing from run ${JSON.stringify(g.present)}, ${tag}`);
   } if(res.gaps.length>20) sq += line("dim", `&nbsp;&nbsp;&nbsp;&nbsp;… and ${res.gaps.length-20} more`);
-  } else sq += line("ok", `&nbsp;&nbsp;&nbsp;&nbsp;none — no skipped numbers within any run.`);
+  } else sq += line("ok", `&nbsp;&nbsp;&nbsp;&nbsp;none, no skipped numbers within any run.`);
   const sqProblem = res.inversions.length || res.gaps.some(g => g.inIndex);
-  sq += line("", `RESULT: <span class="${sqProblem?"res-fail":"res-pass"}">${sqProblem?"DISCREPANCIES FOUND (see above).":"PASS — order is consistent."}</span>`);
+  sq += line("", `RESULT: <span class="${sqProblem?"res-fail":"res-pass"}">${sqProblem?"DISCREPANCIES FOUND (see above).":"PASS, order is consistent."}</span>`);
   sq += `</div>`;
 
   return `<div class="report">${cx}${sq}</div>`;
@@ -636,7 +636,7 @@ function renderCard(i){
   const problems = errs + warns;
 
   const pill = problems === 0
-    ? `<span class="pill ok">✓ ${notes? "Passing" : "Clean"}${notes? " — "+notes+" note"+(notes>1?"s":"") : ""}</span>`
+    ? `<span class="pill ok">✓ ${notes? "Passing" : "Clean"}${notes? ", "+notes+" note"+(notes>1?"s":"") : ""}</span>`
     : `<span class="pill bad">● ${problems} issue${problems>1?"s":""} found</span>`;
 
   const counts = `<div class="counts">
@@ -649,10 +649,10 @@ function renderCard(i){
 
   const findingsHTML = findings.length
     ? renderFindings(findings)
-    : `<div class="clean-note">✓ No discrepancies — the set matches its index and the pages are in order.</div>`;
+    : `<div class="clean-note">✓ No discrepancies, the set matches its index and the pages are in order.</div>`;
 
   const inj = st.injections.length
-    ? `<div class="injbanner show"><span class="ico">⚠</span><div><b>Defect injected — the checks above re-ran on the altered set and flagged it.</b><br>${st.injections.map(esc).join("<br>")}</div></div>`
+    ? `<div class="injbanner show"><span class="ico">⚠</span><div><b>Defect injected, the checks above re-ran on the altered set and flagged it.</b><br>${st.injections.map(esc).join("<br>")}</div></div>`
     : `<div class="injbanner"></div>`;
 
   return `
@@ -696,10 +696,10 @@ function renderCard(i){
 }
 
 /* ==========================================================================
-   Defect injection — mutate a working copy, then re-render (re-runs checks).
+   Defect injection, mutate a working copy, then re-render (re-runs checks).
    ======================================================================= */
 const TARGETS = [
-  // Cyber (SmithGroup): retitle A2.1.2 with A2.1.3's title — a classic copy/paste slip.
+  // Cyber (SmithGroup): retitle A2.1.2 with A2.1.3's title, a classic copy/paste slip.
   { remove:14, alter:15, alterTitle:"LEVEL 1 - FLOOR PLAN - NORTH - AREA B", shuffle:[30,31] },
   // Academy (Grimm & Parker): retitle A-1.1 with A-1.2's title.
   { remove:16, alter:10, alterTitle:"PARTIAL FIRST FLOOR PLAN - AREA B", shuffle:[42,43] },
@@ -770,7 +770,7 @@ function boot(){
   document.getElementById("sets").innerHTML = SETS.map((_, i) => renderCard(i)).join("");
   const total = SETS.reduce((n, s) => n + s.sheets.length, 0);
   document.getElementById("runline-text").textContent =
-    `checked ${SETS.length} sets · ${total} pages · ${SETS.reduce((n,s)=>n+s.index_entries.length,0)} indexed sheets — all in-browser`;
+    `checked ${SETS.length} sets · ${total} pages · ${SETS.reduce((n,s)=>n+s.index_entries.length,0)} indexed sheets, all in-browser`;
 }
 boot();
 </script>
