@@ -184,6 +184,9 @@
   button:active{transform:translateY(1px)}
   button.reset{margin-left:auto; color:var(--muted); border-style:dashed}
   button.reset:hover{color:var(--ink); border-color:var(--muted)}
+  .hdbtns{display:flex; gap:9px; flex-wrap:wrap}
+  button.play{border-color:var(--brand); color:var(--brand); font-weight:600}
+  button.play:hover:not(:disabled){background:var(--brand); color:#fff}
   button:disabled{opacity:.4; cursor:not-allowed}
   .injbanner{
     margin-top:13px; font-size:13px; padding:10px 13px; border-radius:8px;
@@ -676,7 +679,10 @@ function renderCard(i){
       <div class="inject">
         <div class="hd">
           <h3>🧪 Inject a defect</h3>
-          <button class="reset" data-act="reset" data-i="${i}" ${st.injections.length?"":"disabled"}>↺ Reset to real set</button>
+          <div class="hdbtns">
+            <button class="play" data-act="play" data-i="${i}" ${st.applied.length?"disabled":""}>▶ Run all three</button>
+            <button class="reset" data-act="reset" data-i="${i}" ${st.injections.length?"":"disabled"}>↺ Reset to real set</button>
+          </div>
         </div>
         <p class="sub">Tamper with the data the way a real assembly mistake would, then watch the checks catch it live.</p>
         <div class="btns">
@@ -711,6 +717,7 @@ function initState(){
     working: s.sheets.map(x => ({...x})),
     injections: [],
     applied: [],
+    timers: [],
   }));
 }
 
@@ -743,8 +750,22 @@ function inject(i, kind){
   rerender(i, true);
 }
 
+// Walk through all three injections, spaced so each catch is visible.
+// Uses the same guarded inject() path as the buttons; Reset cancels it.
+function playDemo(i){
+  const st = state[i];
+  if(st.applied.length) return;
+  // First injection fires synchronously so the card updates at once
+  // (Play disables, Reset arms); the rest are spaced out and cancellable.
+  ["remove","alter","shuffle"].forEach((kind, k) => {
+    if(k === 0) inject(i, kind);
+    else st.timers.push(setTimeout(() => inject(i, kind), k * 1700));
+  });
+}
+
 function reset(i){
-  state[i] = { working: SETS[i].sheets.map(x => ({...x})), injections: [], applied: [] };
+  state[i].timers.forEach(clearTimeout);
+  state[i] = { working: SETS[i].sheets.map(x => ({...x})), injections: [], applied: [], timers: [] };
   rerender(i);
 }
 
@@ -776,6 +797,7 @@ function boot(){
     if(!b || b.disabled) return;
     const i = Number(b.dataset.i);
     if(b.dataset.act === "reset") reset(i);
+    else if(b.dataset.act === "play") playDemo(i);
     else if(b.dataset.kind) inject(i, b.dataset.kind);
   });
   const total = SETS.reduce((n, s) => n + s.sheets.length, 0);
