@@ -351,12 +351,12 @@ function numberingGaps(numbers, indexNumbers){
   for(const num of numbers){
     const p = splitTrailing(num);
     if(!p) continue;
-    const key = p.prefix + " " + p.suffix;
+    const key = p.prefix + "\u0000" + p.suffix;
     (groups[key] || (groups[key] = {}))[p.value] = num;
   }
   const gaps = [];
   for(const key of Object.keys(groups)){
-    const [prefix, suffix] = key.split(" ");
+    const [prefix, suffix] = key.split("\u0000");
     const members = groups[key];
     const values = Object.keys(members).map(Number).sort((a,b) => a-b);
     if(values.length < 2) continue;
