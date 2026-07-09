@@ -1,6 +1,6 @@
 # SheetCheck
 
-### ▶︎ [Try the live demo — no install, runs in your browser](https://gigaval.github.io/sheetcheck/)
+### ▶︎ [Try the live demo — no install, runs in your browser](https://gigaval.github.io/sheetcheck/demo.html)
 
 The real checks, running on real extraction output from both bid sets, with an
 "inject a defect" mode so you can watch them catch a dropped sheet, a mis-titled
