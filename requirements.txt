@@ -1,2 +1,3 @@
 pdfplumber==0.11.8
 rich>=13.7       # report colors, tables, progress bars
+pyyaml>=6.0      # checks.yaml — the check set as data

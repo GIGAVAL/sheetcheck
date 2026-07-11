@@ -94,6 +94,7 @@ python sequence_check.py data/cybersecurity_bidset.pdf  # order + numbering gaps
 - **`sequence_check.py`**: checks that pages are **bound in index order** and
   flags **numbering gaps** within a discipline (advisory: it notes whether the
   index also skips the number, i.e. whether the gap is intentional).
+- **`checkset.py` + `checks.yaml`**: the same checks, **as data** — see below.
 
 Every command also takes **`--json`** to emit the findings as machine-readable
 JSON, and the two checks **exit non-zero on discrepancies**, so a set can gate
@@ -102,6 +103,38 @@ a CI pipeline:
 ```bash
 python cross_check.py data/academy_bidset.pdf --json > findings.json  # exit 1: discrepancies
 ```
+
+---
+
+## Checks as data
+
+[`checks.yaml`](checks.yaml) defines the whole check set declaratively: each
+check names a primitive type from [`checkset.py`](checkset.py)'s small
+vocabulary (`set_difference`, `field_mismatch`, `duplicate_key`,
+`order_inversion`, `run_gaps`, `unreadable_page`), plus parameters, a severity,
+and a message template. The engine interprets the file; it has no per-check
+logic of its own.
+
+```bash
+python checkset.py --list                             # show the check set (no PDF needed)
+python checkset.py data/academy_bidset.pdf [--json]   # run it; exit 1 on error findings
+```
+
+Why this shape:
+
+- **A new check is a YAML entry, not code** — and the check set is reviewable
+  by a QA lead who doesn't read Python, and diffable, so "what exactly do we
+  check?" has a versioned answer.
+- **Firm-specific check sets are overrides, not forks.** A `firms:` section
+  re-grades severities, silences checks, or changes parameters per firm,
+  applied automatically when that firm's template is detected. Example: a firm
+  that reviews one volume of a multi-volume project at a time re-grades
+  `missing-sheet` from error to note — on the Grimm & Parker set that turns the
+  199 expected partial-volume absences into notes while the one genuinely
+  unindexed sheet (`A-4.2a`) **still fails the set**.
+- **The hand-written checks stay as the reference.** `cross_check.py` and
+  `sequence_check.py` remain the readable single-purpose tools; a parity test
+  proves the engine reproduces their findings from the same data.
 
 ---
 
@@ -129,7 +162,7 @@ pip install -r requirements.txt -r requirements-dev.txt
 pytest
 ```
 
-**30 tests, ~0.2 s.** They run against tiny PDFs generated on the fly with reportlab
+**45 tests, ~0.3 s.** They run against tiny PDFs generated on the fly with reportlab
 (no 40 MB downloads), and cover both templates end-to-end: number-vs-`CD`
 disambiguation, horizontal and rotated title reading, 2- and 3-column index parsing,
 profile detection, and every check's logic. Including:
@@ -175,6 +208,10 @@ A few decisions that shaped the code, and why:
   I/O-heavy PDF parsing happens once and is memoized to disk; the checks are pure
   functions over plain lists/dicts. That split is why the checks are trivially
   unit-testable (no PDFs) and why the second run is instant.
+- **The check set is data, one step past per-firm profiles.** `profiles.py`
+  made the *extraction* firm-configurable; `checks.yaml` does the same for the
+  *checks*. Severity policy is a config review with the QA lead, not a code
+  change — which is how per-firm rollouts actually happen.
 - **Report, don't "correct."** A QA tool's value is surfacing what's actually on the
   sheet. So the extractor reproduces the real `LEGENDS AND LEGENDS NOTES` typo
   verbatim rather than auto-fixing it, and the checks distinguish real findings
@@ -199,6 +236,8 @@ profiles.py         per-firm templates + architect auto-detection
 sheet_index.py      page → number → title table
 cross_check.py      set vs. sheet index
 sequence_check.py   page order + numbering gaps
+checks.yaml         the check set, as data (severities, params, firm overrides)
+checkset.py         engine that interprets checks.yaml
 demo.py             download both sets, run everything
 tests/              pytest suite + fixture generator
 ```

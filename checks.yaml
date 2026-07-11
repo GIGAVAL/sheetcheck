@@ -1,0 +1,74 @@
+# checks.yaml — the SheetCheck check set, as data.
+#
+# Every check is one entry: a primitive type from checkset.py's small
+# vocabulary, its parameters, a severity, and a message template rendered
+# from the finding's evidence fields. Adding, tuning, silencing, or
+# re-grading a check — for everyone or for one firm — is an edit to this
+# file, not a code change. checkset.py interprets this file and contains
+# no per-check logic of its own.
+#
+# Severities: error (fails the set), warning, note (informational).
+
+version: 1
+
+checks:
+  - id: missing-sheet
+    label: Indexed sheet absent from the set
+    type: set_difference
+    params: {from: index, minus: sheets}
+    severity: error
+    message: "{number} is in the sheet index ({index_title!r}) but no page in the set carries it."
+
+  - id: extra-sheet
+    label: Sheet not listed in the index
+    type: set_difference
+    params: {from: sheets, minus: index}
+    severity: error
+    message: "{number} (page {page}, {sheet_title!r}) is in the set but the index never lists it."
+
+  - id: title-mismatch
+    label: Sheet title disagrees with the index
+    type: field_mismatch
+    params:
+      normalize: [uppercase, collapse_whitespace]
+    severity: warning
+    message: "{number} (page {page}): sheet says {sheet_title!r}, index says {index_title!r}."
+
+  - id: duplicate-number
+    label: Same sheet number on multiple pages
+    type: duplicate_key
+    severity: error
+    message: "{number} appears on pages {pages}."
+
+  - id: page-order
+    label: Pages bound out of index order
+    type: order_inversion
+    severity: error
+    message: "page {page_a} ({number_a}) is followed by page {page_b} ({number_b}), but the index lists {number_b} first."
+
+  - id: numbering-gap
+    label: Skipped value inside a numbering run
+    type: run_gaps
+    params: {escalate_if_in_index: error}   # a gap the index does NOT share is only a note
+    severity: note
+    message: "{missing_number} is skipped in the run {present_run}{qualifier}."
+
+  - id: unreadable-page
+    label: Page with no readable sheet number
+    type: unreadable_page
+    severity: warning
+    message: "page {page} has no readable sheet number."
+
+# Per-firm overrides, applied when the template profile detects that firm.
+# Any of severity / enabled / params can be overridden per check id.
+#
+# Example — a firm that issues (and reviews) one volume of a multi-volume
+# project at a time would re-grade absent indexed sheets from error to note,
+# and a firm whose numbering standard allows reserved gaps would silence the
+# gap check entirely:
+#
+#   firms:
+#     "Grimm & Parker":
+#       missing-sheet: {severity: note}
+#       numbering-gap: {enabled: false}
+firms: {}
