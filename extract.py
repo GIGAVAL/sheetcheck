@@ -17,11 +17,15 @@ Public API:
 
 import json
 import os
-import sys
 
 import pdfplumber
+from rich.console import Console
+from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeRemainingColumn
 
 from profiles import detect_profile, DEFAULT_PROFILE
+
+# Progress goes to stderr so reports (and --json) on stdout stay clean.
+_err = Console(stderr=True, highlight=False)
 
 
 # The title block is the info strip down the right edge of each sheet.
@@ -149,15 +153,22 @@ def extract_sheets(pdf_path, use_cache=True):
         # First run only (no cache): extraction is slow, so show progress on
         # stderr — otherwise the demo looks hung. Reports go to stdout, so this
         # stays out of them.
-        print(f"[extract] {os.path.basename(pdf_path)}: {profile.name} template, "
-              f"reading {n} title blocks (first run; cached afterward)…",
-              file=sys.stderr, flush=True)
         sheets = []
-        for i, page in enumerate(pdf.pages, start=1):
-            number, title = extract_title_block(page, profile)
-            sheets.append({"page": i, "number": number, "title": title})
-            if i % 25 == 0 or i == n:
-                print(f"[extract]   {i}/{n} pages", file=sys.stderr, flush=True)
+        with Progress(
+            TextColumn("[dim]extract[/]"),
+            TextColumn("{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeRemainingColumn(),
+            console=_err,
+        ) as progress:
+            task = progress.add_task(
+                f"{os.path.basename(pdf_path)} [dim]({profile.name} template, "
+                f"first run; cached afterward)[/]", total=n)
+            for i, page in enumerate(pdf.pages, start=1):
+                number, title = extract_title_block(page, profile)
+                sheets.append({"page": i, "number": number, "title": title})
+                progress.advance(task)
 
     if use_cache:
         try:

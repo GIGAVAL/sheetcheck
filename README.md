@@ -95,6 +95,14 @@ python sequence_check.py data/cybersecurity_bidset.pdf  # order + numbering gaps
   flags **numbering gaps** within a discipline (advisory: it notes whether the
   index also skips the number, i.e. whether the gap is intentional).
 
+Every command also takes **`--json`** to emit the findings as machine-readable
+JSON, and the two checks **exit non-zero on discrepancies**, so a set can gate
+a CI pipeline:
+
+```bash
+python cross_check.py data/academy_bidset.pdf --json > findings.json  # exit 1: discrepancies
+```
+
 ---
 
 ## How it works
@@ -121,7 +129,7 @@ pip install -r requirements.txt -r requirements-dev.txt
 pytest
 ```
 
-**23 tests, ~0.2 s.** They run against tiny PDFs generated on the fly with reportlab
+**30 tests, ~0.2 s.** They run against tiny PDFs generated on the fly with reportlab
 (no 40 MB downloads), and cover both templates end-to-end: number-vs-`CD`
 disambiguation, horizontal and rotated title reading, 2- and 3-column index parsing,
 profile detection, and every check's logic. Including:
@@ -178,8 +186,6 @@ A few decisions that shaped the code, and why:
 - **A third firm, and a calibration harness.** Adding profiles by hand-measuring a
   title block doesn't scale. The next step is a small tool that samples a set and
   proposes a profile (title size/orientation, index columns) for review.
-- **Machine-readable output + CI gating.** Emit JSON/CSV and exit non-zero on
-  discrepancies, so a set can be checked automatically on every issue in a pipeline.
 - **Confidence scores.** Flag low-confidence extractions (like the two rotated
   academy titles) for human review instead of silently reporting them.
 - **Cross-check beyond the index.** Compare sheet references, revision clouds, and

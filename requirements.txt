@@ -1,1 +1,2 @@
 pdfplumber==0.11.8
+rich>=13.7       # report colors, tables, progress bars

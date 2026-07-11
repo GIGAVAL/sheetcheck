@@ -13,15 +13,22 @@ firm-specific bits come from a Profile (see profiles.py), detected from the
 PDF automatically.
 
 Usage:
-    python cross_check.py <set.pdf>
+    python cross_check.py <set.pdf> [--json]
+
+Exits non-zero when discrepancies are found, so a set can gate a CI pipeline.
 """
 
+import json
 import sys
 
 import pdfplumber
+from rich.console import Console
+from rich.markup import escape
 
 from extract import extract_sheets
 from profiles import detect_profile
+
+console = Console(highlight=False)
 
 
 def parse_sheet_index(page, profile):
@@ -126,79 +133,120 @@ def reconcile_cover(block_rows, index, missing):
     return block_rows, [], missing
 
 
-def print_report(profile, index, block_rows, missing, extra, mismatches, duplicates, inferred):
-    found = sum(1 for _, num, _ in block_rows if num)
-    still_unreadable = [pg for pg, num, _ in block_rows if not num]
+def analyze_rows(profile_name, index_page, index, block_rows):
+    """Run every cross-check over already-extracted rows.
 
-    print("=" * 70)
-    print(f"SHEET INDEX CROSS-CHECK   [{profile.name} template]")
-    print("=" * 70)
-    print(f"Index (page {profile.index_page}) lists {len(index)} sheets.")
-    print(f"Title blocks matched {found} sheets across {len(block_rows)} pages.")
-    print()
+    Pure function over plain data (no PDF I/O), returns a JSON-serializable
+    findings dict — the single source both the printed report and --json use.
+    """
+    missing, extra, mismatches, duplicates = cross_check(block_rows, index)
+    block_rows, inferred, missing = reconcile_cover(block_rows, index, missing)
 
-    if inferred:
-        print(f"[i] INFERRED — page had no readable sheet number, matched by position ({len(inferred)}):")
-        for page, number, title in inferred:
-            print(f"      page {page} -> {number:<8} {title!r}  (cover/title sheet, inferred)")
-        print()
+    block = {num: (pg, t) for pg, num, t in block_rows if num}
+    unreadable = [pg for pg, num, _ in block_rows if not num]
 
-    print(f"[A] MISSING — in the index but not found in the set ({len(missing)}):")
-    if missing:
-        for number in missing:
-            print(f"      {number:<10} index title: {index[number]!r}")
-    else:
-        print("      none — every indexed sheet is present.")
-    print()
-
-    print(f"[B] EXTRA — a page exists but the sheet isn't in the index ({len(extra)}):")
-    if extra:
-        block = {num: (pg, t) for pg, num, t in block_rows if num}
-        for number in extra:
-            pg, t = block[number]
-            print(f"      {number:<10} page {pg}: {t!r}")
-    else:
-        print("      none — every sheet in the set is listed in the index.")
-    print()
-
-    print(f"[C] TITLE MISMATCH — sheet present, but titles differ ({len(mismatches)}):")
-    if mismatches:
-        for number, page_no, index_title, block_title in mismatches:
-            print(f"      {number}  (page {page_no})")
-            print(f"          index: {index_title!r}")
-            print(f"          sheet: {block_title!r}")
-    else:
-        print("      none — all titles agree.")
-    print()
-
-    if duplicates:
-        print(f"[!] DUPLICATE sheet numbers on multiple pages ({len(duplicates)}):")
-        for number, pages in duplicates.items():
-            print(f"      {number}: pages {pages}")
-        print()
-
-    if still_unreadable:
-        print(f"[!] UNREADABLE — no sheet number could be read on page(s) {still_unreadable}.")
-        print()
-
-    clean = not (missing or extra or mismatches or duplicates or still_unreadable)
-    print("RESULT:", "PASS — set matches its index." if clean
-          else "DISCREPANCIES FOUND (see above).")
+    result = {
+        "check": "cross_check",
+        "profile": profile_name,
+        "index_page": index_page,
+        "index_count": len(index),
+        "pages": len(block_rows),
+        "matched": len(block),
+        "inferred": [{"page": pg, "number": num, "title": t}
+                     for pg, num, t in inferred],
+        "missing": [{"number": num, "index_title": index[num]} for num in missing],
+        "extra": [{"number": num, "page": block[num][0], "title": block[num][1]}
+                  for num in extra],
+        "title_mismatches": [
+            {"number": num, "page": pg, "index_title": it, "sheet_title": bt}
+            for num, pg, it, bt in mismatches
+        ],
+        "duplicates": [{"number": num, "pages": pages}
+                       for num, pages in duplicates.items()],
+        "unreadable_pages": unreadable,
+    }
+    result["clean"] = not (result["missing"] or result["extra"]
+                           or result["title_mismatches"] or result["duplicates"]
+                           or result["unreadable_pages"])
+    return result
 
 
-def run(pdf_path):
+def analyze(pdf_path):
+    """Extract, parse the index, and cross-check one PDF; returns the findings dict."""
     block_rows = [(s["page"], s["number"], s["title"]) for s in extract_sheets(pdf_path)]
     with pdfplumber.open(pdf_path) as pdf:
         profile = detect_profile(pdf)
         index = dict(parse_sheet_index(pdf.pages[profile.index_page - 1], profile))
+    return analyze_rows(profile.name, profile.index_page, index, block_rows)
 
-    missing, extra, mismatches, duplicates = cross_check(block_rows, index)
-    block_rows, inferred, missing = reconcile_cover(block_rows, index, missing)
-    print_report(profile, index, block_rows, missing, extra, mismatches, duplicates, inferred)
+
+def print_report(res):
+    console.print("=" * 70)
+    console.print(f"[bold]SHEET INDEX CROSS-CHECK[/]   [dim]\\[{escape(res['profile'])} template][/]")
+    console.print("=" * 70)
+    console.print(f"Index (page {res['index_page']}) lists {res['index_count']} sheets.")
+    console.print(f"Title blocks matched {res['matched']} sheets across {res['pages']} pages.")
+    console.print()
+
+    if res["inferred"]:
+        console.print(f"[blue]\\[i] INFERRED[/] — page had no readable sheet number, matched by position ({len(res['inferred'])}):")
+        for inf in res["inferred"]:
+            console.print(f"      page {inf['page']} -> {inf['number']:<8} {escape(repr(inf['title']))}  [dim](cover/title sheet, inferred)[/]")
+        console.print()
+
+    console.print(f"[red]\\[A] MISSING[/] — in the index but not found in the set ({len(res['missing'])}):")
+    if res["missing"]:
+        for m in res["missing"]:
+            console.print(f"      {m['number']:<10} [dim]index title:[/] {escape(repr(m['index_title']))}")
+    else:
+        console.print("      [green]none — every indexed sheet is present.[/]")
+    console.print()
+
+    console.print(f"[red]\\[B] EXTRA[/] — a page exists but the sheet isn't in the index ({len(res['extra'])}):")
+    if res["extra"]:
+        for e in res["extra"]:
+            console.print(f"      {e['number']:<10} page {e['page']}: {escape(repr(e['title']))}")
+    else:
+        console.print("      [green]none — every sheet in the set is listed in the index.[/]")
+    console.print()
+
+    console.print(f"[yellow]\\[C] TITLE MISMATCH[/] — sheet present, but titles differ ({len(res['title_mismatches'])}):")
+    if res["title_mismatches"]:
+        for m in res["title_mismatches"]:
+            console.print(f"      {m['number']}  (page {m['page']})")
+            console.print(f"          [dim]index:[/] {escape(repr(m['index_title']))}")
+            console.print(f"          [yellow]sheet:[/] {escape(repr(m['sheet_title']))}")
+    else:
+        console.print("      [green]none — all titles agree.[/]")
+    console.print()
+
+    if res["duplicates"]:
+        console.print(f"[red]\\[!] DUPLICATE[/] sheet numbers on multiple pages ({len(res['duplicates'])}):")
+        for d in res["duplicates"]:
+            console.print(f"      {d['number']}: pages {d['pages']}")
+        console.print()
+
+    if res["unreadable_pages"]:
+        console.print(f"[yellow]\\[!] UNREADABLE[/] — no sheet number could be read on page(s) {res['unreadable_pages']}.")
+        console.print()
+
+    console.print("RESULT:", "[bold green]PASS — set matches its index.[/]" if res["clean"]
+                  else "[bold red]DISCREPANCIES FOUND (see above).[/]")
+
+
+def run(pdf_path, as_json=False):
+    result = analyze(pdf_path)
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        print_report(result)
+    return result
 
 
 def main():
-    run(sys.argv[1] if len(sys.argv) > 1 else "bidset.pdf")
+    args = [a for a in sys.argv[1:] if a != "--json"]
+    result = run(args[0] if args else "bidset.pdf", as_json="--json" in sys.argv)
+    sys.exit(0 if result["clean"] else 1)
 
 
 if __name__ == "__main__":

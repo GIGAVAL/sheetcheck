@@ -10,12 +10,19 @@ The actual extraction lives in extract.py (which caches results to disk,
 so only the first run is slow). This module is just the table view.
 
 Usage:
-    python sheet_index.py bidset.pdf
+    python sheet_index.py bidset.pdf [--json]
 """
 
+import json
 import sys
 
+from rich import box
+from rich.console import Console
+from rich.table import Table
+
 from extract import extract_sheets, extract_title_block  # noqa: F401 (re-exported)
+
+console = Console(highlight=False)
 
 
 def build_index(pdf_path):
@@ -24,30 +31,35 @@ def build_index(pdf_path):
 
 
 def print_table(rows):
-    """Print an aligned text table with no external dependencies."""
-    headers = ("PAGE", "SHEET", "SHEET TITLE")
-    num_w = max(len(headers[1]), *(len(r[1]) for r in rows)) if rows else len(headers[1])
-    pg_w = max(len(headers[0]), len(str(len(rows))))
-
-    print(f"{headers[0]:>{pg_w}}  {headers[1]:<{num_w}}  {headers[2]}")
-    print(f"{'-'*pg_w}  {'-'*num_w}  {'-'*len(headers[2])}")
+    table = Table(box=box.SIMPLE_HEAD, pad_edge=False)
+    table.add_column("PAGE", justify="right")
+    table.add_column("SHEET", style="bold")
+    table.add_column("SHEET TITLE")
     for page_no, number, title in rows:
-        print(f"{page_no:>{pg_w}}  {(number or '(none)'):<{num_w}}  {title or '(none)'}")
+        table.add_row(str(page_no),
+                      number or "[dim](none)[/]",
+                      title or "[dim](none)[/]")
+    console.print(table)
 
 
-def run(pdf_path):
+def run(pdf_path, as_json=False):
     rows = build_index(pdf_path)
-    print("=" * 70)
-    print("SHEET INDEX")
-    print("=" * 70)
+    if as_json:
+        print(json.dumps([{"page": pg, "number": num, "title": t}
+                          for pg, num, t in rows], indent=2))
+        return rows
+    console.print("=" * 70)
+    console.print("[bold]SHEET INDEX[/]")
+    console.print("=" * 70)
     print_table(rows)
     found = sum(1 for _, num, _ in rows if num)
-    print()
-    print(f"{len(rows)} pages scanned — sheet number found on {found}.")
+    console.print(f"{len(rows)} pages scanned — sheet number found on {found}.")
+    return rows
 
 
 def main():
-    run(sys.argv[1] if len(sys.argv) > 1 else "bidset.pdf")
+    args = [a for a in sys.argv[1:] if a != "--json"]
+    run(args[0] if args else "bidset.pdf", as_json="--json" in sys.argv)
 
 
 if __name__ == "__main__":

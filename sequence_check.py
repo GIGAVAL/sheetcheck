@@ -14,17 +14,24 @@ Two order-related checks the index cross-check doesn't cover:
       it -> probably intentional) or present in the index (a real omission).
 
 Usage:
-    python sequence_check.py <set.pdf>
+    python sequence_check.py <set.pdf> [--json]
+
+Exits non-zero on real problems (inversions, or gaps the index does not
+share), so a set can gate a CI pipeline. Advisory-only gaps still pass.
 """
 
+import json
 import re
 import sys
 
 import pdfplumber
+from rich.console import Console
 
 from extract import extract_sheets
 from profiles import detect_profile
 from cross_check import parse_sheet_index, reconcile_cover
+
+console = Console(highlight=False)
 
 
 def _load(pdf_path):
@@ -90,46 +97,86 @@ def numbering_gaps(numbers, index_numbers):
     return gaps
 
 
-def print_report(profile, inversions, gaps):
-    print("=" * 70)
-    print(f"SEQUENCE CHECK   [{profile.name} template]")
-    print("=" * 70)
+def analyze_rows(profile_name, block_rows, index_entries):
+    """Run both sequence checks over already-extracted rows.
 
-    print(f"[A] PAGE ORDER — PDF order vs index order ({len(inversions)} break(s)):")
-    if inversions:
-        for pg_a, num_a, pg_b, num_b in inversions:
-            print(f"      page {pg_a} ({num_a}) is followed by page {pg_b} ({num_b}), "
-                  f"but the index lists {num_b} before {num_a}.")
-    else:
-        print("      none — pages follow the index order.")
-    print()
-
-    print(f"[B] NUMBERING GAPS — advisory ({len(gaps)} gap(s)):")
-    if gaps:
-        for missing_number, present, in_index in gaps:
-            tag = "ALSO in index (real omission)" if in_index else "also skipped by index (likely intentional)"
-            print(f"      {missing_number:<10} missing from run {present}  — {tag}")
-    else:
-        print("      none — no skipped numbers within any run.")
-    print()
-
-    real_problems = inversions or any(in_index for _, _, in_index in gaps)
-    print("RESULT:", "DISCREPANCIES FOUND (see above)." if real_problems
-          else "PASS — order is consistent (any gaps are also skipped by the index).")
-
-
-def run(pdf_path):
-    profile, block_rows, index_entries = _load(pdf_path)
+    Pure function over plain data (no PDF I/O), returns a JSON-serializable
+    findings dict — the single source both the printed report and --json use.
+    """
     index_numbers = {n for n, _ in index_entries}
     present_numbers = [num for _, num, _ in block_rows if num]
 
     inversions = order_inversions(block_rows, index_entries)
     gaps = numbering_gaps(present_numbers, index_numbers)
-    print_report(profile, inversions, gaps)
+
+    result = {
+        "check": "sequence_check",
+        "profile": profile_name,
+        "inversions": [
+            {"page_a": pg_a, "number_a": num_a, "page_b": pg_b, "number_b": num_b}
+            for pg_a, num_a, pg_b, num_b in inversions
+        ],
+        "gaps": [
+            {"missing_number": num, "present_run": present, "in_index": in_index}
+            for num, present, in_index in gaps
+        ],
+    }
+    result["clean"] = not (result["inversions"]
+                           or any(g["in_index"] for g in result["gaps"]))
+    return result
+
+
+def analyze(pdf_path):
+    """Extract and sequence-check one PDF; returns the findings dict."""
+    profile, block_rows, index_entries = _load(pdf_path)
+    return analyze_rows(profile.name, block_rows, index_entries)
+
+
+def print_report(res):
+    console.print("=" * 70)
+    console.print(f"[bold]SEQUENCE CHECK[/]   [dim]\\[{res['profile']} template][/]")
+    console.print("=" * 70)
+
+    console.print(f"[red]\\[A] PAGE ORDER[/] — PDF order vs index order ({len(res['inversions'])} break(s)):")
+    if res["inversions"]:
+        for inv in res["inversions"]:
+            console.print(f"      page {inv['page_a']} ({inv['number_a']}) is followed by "
+                          f"page {inv['page_b']} ({inv['number_b']}), "
+                          f"but the index lists {inv['number_b']} before {inv['number_a']}.")
+    else:
+        console.print("      [green]none — pages follow the index order.[/]")
+    console.print()
+
+    console.print(f"[blue]\\[B] NUMBERING GAPS[/] — advisory ({len(res['gaps'])} gap(s)):")
+    if res["gaps"]:
+        for g in res["gaps"]:
+            if g["in_index"]:
+                console.print(f"      {g['missing_number']:<10} missing from run {g['present_run']}  "
+                              f"— [red]ALSO in index (real omission)[/]")
+            else:
+                console.print(f"      [dim]{g['missing_number']:<10} missing from run {g['present_run']}  "
+                              f"— also skipped by index (likely intentional)[/]")
+    else:
+        console.print("      [green]none — no skipped numbers within any run.[/]")
+    console.print()
+
+    console.print("RESULT:", "[bold red]DISCREPANCIES FOUND (see above).[/]" if not res["clean"]
+                  else "[bold green]PASS — order is consistent (any gaps are also skipped by the index).[/]")
+
+
+def run(pdf_path, as_json=False):
+    result = analyze(pdf_path)
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        print_report(result)
+    return result
 
 
 def main():
-    run(sys.argv[1] if len(sys.argv) > 1 else "bidset.pdf")
+    args = [a for a in sys.argv[1:] if a != "--json"]
+    result = run(args[0] if args else "bidset.pdf", as_json="--json" in sys.argv)
+    sys.exit(0 if result["clean"] else 1)
 
 
 if __name__ == "__main__":

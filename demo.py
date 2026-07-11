@@ -14,12 +14,19 @@ blocks (results are cached to disk, so later runs are fast).
 """
 
 import os
-import sys
 import urllib.request
+
+from rich import box
+from rich.console import Console
+from rich.progress import (BarColumn, DownloadColumn, Progress, TextColumn,
+                           TransferSpeedColumn)
+from rich.table import Table
 
 import sheet_index
 import cross_check
 import sequence_check
+
+console = Console(highlight=False)
 
 
 DATA_DIR = "data"
@@ -45,51 +52,83 @@ SETS = [
 
 
 def download(url, path):
-    """Download url -> path with a simple progress line; skip if present."""
+    """Download url -> path with a progress bar; skip if already present."""
     if os.path.exists(path) and os.path.getsize(path) > 0:
-        print(f"  already downloaded ({os.path.getsize(path) // (1024*1024)} MB): {path}")
+        console.print(f"  [dim]already downloaded ({os.path.getsize(path) // (1024*1024)} MB): {path}[/]")
         return True
     if not url:
-        print(f"  SKIP: no URL configured for {os.path.basename(path)} "
-              f"(set ACADEMY_URL to enable).")
+        console.print(f"  [yellow]SKIP:[/] no URL configured for {os.path.basename(path)} "
+                      f"(set ACADEMY_URL to enable).")
         return False
 
-    print(f"  downloading {url}")
+    with Progress(
+        TextColumn("  {task.description}"),
+        BarColumn(),
+        DownloadColumn(),
+        TransferSpeedColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task(os.path.basename(path), total=None)
 
-    def hook(blocks, block_size, total):
-        if total > 0:
-            pct = min(100, blocks * block_size * 100 // total)
-            sys.stdout.write(f"\r    {pct:3d}%")
-            sys.stdout.flush()
+        def hook(blocks, block_size, total):
+            if total > 0:
+                progress.update(task, total=total,
+                                completed=min(blocks * block_size, total))
 
-    urllib.request.urlretrieve(url, path, reporthook=hook)
-    print(f"\r    done ({os.path.getsize(path) // (1024*1024)} MB)")
+        urllib.request.urlretrieve(url, path, reporthook=hook)
     return True
 
 
 def run_all_checks(pdf_path):
+    """Run every check; returns (cross_check_result, sequence_result)."""
     print()
     sheet_index.run(pdf_path)
     print()
-    cross_check.run(pdf_path)
+    cc = cross_check.run(pdf_path)
     print()
-    sequence_check.run(pdf_path)
+    sq = sequence_check.run(pdf_path)
+    return cc, sq
+
+
+def _verdict(result, issues):
+    if result["clean"]:
+        return "[bold green]PASS[/]"
+    return f"[bold red]{issues} finding(s)[/]"
+
+
+def print_summary(outcomes):
+    table = Table(title="SheetCheck — run summary", box=box.SIMPLE_HEAD)
+    table.add_column("Set")
+    table.add_column("Template")
+    table.add_column("Index cross-check")
+    table.add_column("Sequence check")
+    for spec, cc, sq in outcomes:
+        cc_issues = (len(cc["missing"]) + len(cc["extra"]) + len(cc["title_mismatches"])
+                     + len(cc["duplicates"]) + len(cc["unreadable_pages"]))
+        sq_issues = len(sq["inversions"]) + sum(1 for g in sq["gaps"] if g["in_index"])
+        table.add_row(spec["name"], cc["profile"],
+                      _verdict(cc, cc_issues), _verdict(sq, sq_issues))
+    console.print(table)
 
 
 def main():
     os.makedirs(DATA_DIR, exist_ok=True)
 
+    outcomes = []
     for spec in SETS:
         path = os.path.join(DATA_DIR, spec["filename"])
-        print("=" * 70)
-        print(f"{spec['name']}  —  {spec['firm']}")
-        print("=" * 70)
+        console.print("=" * 70)
+        console.print(f"[bold]{spec['name']}[/]  —  {spec['firm']}")
+        console.print("=" * 70)
         ok = download(spec["url"], path)
         if not ok:
-            print("  (skipping checks for this set)\n")
+            console.print("  (skipping checks for this set)\n")
             continue
-        run_all_checks(path)
+        outcomes.append((spec, *run_all_checks(path)))
         print()
+
+    if outcomes:
+        print_summary(outcomes)
 
 
 if __name__ == "__main__":
