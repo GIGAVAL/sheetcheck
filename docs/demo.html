@@ -271,6 +271,44 @@
   </div>
 </header>
 
+<section class="wrap">
+  <div class="card">
+    <div class="card-head">
+      <h2>HOW TO READ THE FINDINGS</h2>
+    </div>
+    <div class="card-body">
+      <div class="finding error">
+        <div class="sev error">ERROR</div>
+        <div class="body">
+          <h4>The set contradicts its own record.</h4>
+          <p>Missing, duplicated, unindexed, or out-of-order sheets, verified against the set's own index.</p>
+          <p><b>Action:</b> correct the set before issue.</p>
+        </div>
+      </div>
+      <div class="finding warning">
+        <div class="sev warning">WARNING</div>
+        <div class="body">
+          <h4>A human needs to decide.</h4>
+          <p>Either a plausible innocent explanation exists (partial volume) or extraction couldn't verify with confidence (unreadable number, possible extraction artifact).</p>
+          <p><b>Action:</b> reviewer judgment required.</p>
+        </div>
+      </div>
+      <div class="finding note">
+        <div class="sev note">NOTE</div>
+        <div class="body">
+          <h4>Checks pass, but a reviewer would want to know.</h4>
+          <p>Advisory only.</p>
+          <p><b>Action:</b> awareness, no required fix.</p>
+        </div>
+      </div>
+      <p style="margin:16px 0 0; font-size:13px; color:var(--faint)">
+        SheetCheck reports, it never corrects. Severity is triage for the
+        reviewer who owns the fix. The judgment and the stamp stay with the human.
+      </p>
+    </div>
+  </div>
+</section>
+
 <main class="wrap" id="sets"></main>
 
 <footer class="wrap">
